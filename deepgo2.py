@@ -38,9 +38,9 @@ from torch_utils import FastTensorDataLoader
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgozero_box.th'
+    model_file = f'{data_root}/{ont}/deepgo2.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgozero_box.pkl'
+    out_file = f'{data_root}/{ont}/predictions_deepgo2.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
