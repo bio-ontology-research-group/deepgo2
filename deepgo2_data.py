@@ -56,7 +56,7 @@ def main(go_file, data_file, sim_file):
         terms_df = pd.DataFrame({'gos': terms})
         terms_df.to_pickle(f'data/{ont}/terms.pkl')
         iprs_df = pd.DataFrame({'interpros': interpros})
-        # iprs_df.to_pickle(f'data/{ont}/interpros.pkl')
+        iprs_df.to_pickle(f'data/{ont}/interpros.pkl')
 
         # Split train/valid/test
         proteins = tdf['proteins']
