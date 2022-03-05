@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
     '--go-file', '-gf', default='data/go.obo',
     help='Gene Ontology file in OBO Format')
 @ck.option(
-    '--data-file', '-df', default='data/swissprot_exp.pkl',
+    '--data-file', '-df', default='data/swissprot_exp_esm_dl2vec.pkl',
     help='Uniprot KB, generated with uni2pandas.py')
 @ck.option(
     '--sim-file', '-sf', default='data/swissprot_exp.sim',
@@ -29,14 +29,17 @@ def main(go_file, data_file, sim_file):
     logging.info('Processing annotations')
     
     annotations = list()
-    for ont in ['mf', 'bp', 'cc']:
+    for ont in ['mf', 'bp', 'cc', 'all']:
         cnt = Counter()
         iprs = Counter()
         index = []
         for i, row in enumerate(df.itertuples()):
             ok = False
             for term in row.prop_annotations:
-                if go.get_namespace(term) == NAMESPACES[ont]:
+                if ont == 'all':
+                    cnt[term] += 1
+                    ok = True
+                elif go.get_namespace(term) == NAMESPACES[ont]:
                     cnt[term] += 1
                     ok = True
             for ipr in row.interpros:
@@ -44,7 +47,12 @@ def main(go_file, data_file, sim_file):
             if ok:
                 index.append(i)
 
-        del cnt[FUNC_DICT[ont]] # Remove top term
+        if ont == 'all':
+            del cnt[FUNC_DICT['mf']] # Remove top term
+            del cnt[FUNC_DICT['bp']] # Remove top term
+            del cnt[FUNC_DICT['cc']] # Remove top term
+        else:
+            del cnt[FUNC_DICT[ont]] # Remove top term
         tdf = df.iloc[index]
         terms = list(cnt.keys())
         interpros = list(iprs.keys())
