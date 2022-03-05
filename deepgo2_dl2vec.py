@@ -21,7 +21,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 
 @ck.command()
 @ck.option(
-    '--data-root', '-dr', default='data',
+    '--data-root', '-dr', default='data/dl2vec',
     help='Prediction model')
 @ck.option(
     '--ont', '-ont', default='mf',
@@ -35,7 +35,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 @ck.option(
-    '--device', '-d', default='cuda:1',
+    '--device', '-d', default='cuda:0',
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
