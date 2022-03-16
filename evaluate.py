@@ -27,7 +27,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--model', '-m', default='deepgozero_box',
+    '--model', '-m', default='dl2vec',
     help='Prediction model')
 @ck.option(
     '--combine', '-c', is_flag=True,

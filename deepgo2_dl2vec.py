@@ -21,16 +21,16 @@ from torch.optim.lr_scheduler import MultiStepLR
 
 @ck.command()
 @ck.option(
-    '--data-root', '-dr', default='data/dl2vec',
+    '--data-root', '-dr', default='data',
     help='Prediction model')
 @ck.option(
-    '--ont', '-ont', default='mf',
+    '--ont', '-ont', default='cc',
     help='Prediction model')
 @ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=256,
+    '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -43,14 +43,15 @@ def main(data_root, ont, batch_size, epochs, load, device):
     terms_file = f'{data_root}/{ont}/terms.pkl'
     out_file = f'{data_root}/{ont}/predictions_dl2vec.pkl'
 
-    input_length = 100
+    input_length = 200
 
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
     terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, input_length)
     n_terms = len(terms_dict)
-    
-    net = DGDL2VModel(input_length, n_terms, device).to(device)
+    nodes = [1024]
+    dropout = 0.4
+    net = DGDL2VModel(input_length, n_terms, device, nodes = nodes, dropout = dropout).to(device)
     
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
@@ -66,10 +67,15 @@ def main(data_root, ont, batch_size, epochs, load, device):
     valid_labels = valid_labels.detach().cpu().numpy()
     test_labels = test_labels.detach().cpu().numpy()
     
-    optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
-    scheduler = MultiStepLR(optimizer, milestones=[1, 3,], gamma=0.1)
+    milestones = [1,5 ]
+#    milestones = [20000000]
+    optimizer = th.optim.Adam(net.parameters(), lr=1e-3, weight_decay = 0.00001)
+    scheduler = MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
 
     best_loss = 10000.0
+    best_train_loss = 10000.0
+    stopping_value = 3
+    early_stopping = stopping_value
     if not load:
         print('Training the model')
         log_file = open(f'{data_root}/train_logs.tsv', 'w')
@@ -115,7 +121,14 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 best_loss = valid_loss
                 print('Saving model')
                 th.save(net.state_dict(), model_file)
+            if train_loss < best_train_loss:
+                early_stopping = stopping_value
+            else:
+                early_stopping -= 1
 
+            if early_stopping == 0:
+                print("Finished training (early stopping)")
+                break
             scheduler.step()
             
         log_file.close()
@@ -182,7 +195,7 @@ class Residual(nn.Module):
         
 class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.3, activation=nn.ReLU):
+    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0, activation=nn.ReLU):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation()
@@ -200,13 +213,13 @@ class MLPBlock(nn.Module):
 
 class DGDL2VModel(nn.Module):
 
-    def __init__(self, input_length, nb_gos, device, nodes=[1024,]):
+    def __init__(self, input_length, nb_gos, device, nodes=[1024,], dropout = 0):
         super().__init__()
         self.nb_gos = nb_gos
         net = []
         for hidden_dim in nodes:
             net.append(MLPBlock(input_length, hidden_dim))
-            net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
+            net.append(Residual(MLPBlock(hidden_dim, hidden_dim, dropout = dropout)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
         net.append(nn.Sigmoid())
@@ -228,7 +241,7 @@ def load_data(data_root, ont, input_length):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/old/test_data.pkl')
 
     
     train_data = get_data(train_df, input_length, terms_dict, ont)
