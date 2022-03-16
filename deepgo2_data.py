@@ -1,7 +1,7 @@
 import click as ck
 import numpy as np
 import pandas as pd
-from collections import Counter
+from collections import Counter, deque
 from utils import Ontology, FUNC_DICT, NAMESPACES, MOLECULAR_FUNCTION, BIOLOGICAL_PROCESS, CELLULAR_COMPONENT
 import logging
 
@@ -78,8 +78,8 @@ def main(go_file, data_file, sim_file):
                 p1, p2, score = it[0], it[1], float(it[2]) / 100.0
                 if p1 == p2:
                     continue
-                if score < 0.5:
-                    continue
+                # if score < 0.5:
+                #     continue
                 if p1 not in prot_set or p2 not in prot_set:
                     continue
                 if p1 not in sim:
@@ -90,19 +90,26 @@ def main(go_file, data_file, sim_file):
                 sim[p2].append(p1)
 
         used = set()
-        def dfs(prots, prot):
+        def dfs(prot):
+            stack = deque()
+            stack.append(prot)
             used.add(prot)
-            if prot in sim:
-                for p in sim[prot]:
-                    if p not in used:
-                        dfs(prots, p)
-            prots.append(prot)
+            prots = []
+            while len(stack) > 0:
+                prot = stack.pop()
+                prots.append(prot)
+                used.add(prot)
+                if prot in sim:
+                    for p in sim[prot]:
+                        if p not in used:
+                            used.add(p)
+                            stack.append(p)
+            return prots
 
         groups = []
         for p in proteins:
-            group = []
             if p not in used:
-                dfs(group, p)
+                group = dfs(p)
                 groups.append(group)
         print(len(proteins), len(groups))
         index = np.arange(len(groups))

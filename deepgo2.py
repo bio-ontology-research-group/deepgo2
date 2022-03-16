@@ -16,6 +16,7 @@ from aminoacids import to_onehot, MAXLEN
 from dgl.nn import GraphConv, GATConv
 import dgl
 from torch_utils import FastTensorDataLoader
+from collections import Counter
 
 
 @ck.command()
@@ -43,8 +44,9 @@ def main(data_root, ont, batch_size, epochs, load, device):
     out_file = f'{data_root}/{ont}/predictions_deepgo2.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
+    
     loss_func = nn.BCELoss()
-    iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file)
+    iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file, go)
     n_terms = len(terms_dict)
     n_iprs = len(iprs_dict)
     
@@ -62,9 +64,9 @@ def main(data_root, ont, batch_size, epochs, load, device):
     normal_forms = nf1, nf2, nf3, nf4
 
 
-    train_iprs, train_esm, train_diam, train_seqs, train_dl2vec, train_labels = train_data
-    valid_iprs, valid_esm, valid_diam, valid_seqs, valid_dl2vec, valid_labels = valid_data
-    test_iprs, test_esm, test_diam, test_seqs, test_dl2vec, test_labels = test_data
+    train_iprs, train_esm, train_diam, train_seqs, train_dl2vec, train_ics, train_labels = train_data
+    valid_iprs, valid_esm, valid_diam, valid_seqs, valid_dl2vec, valid_ics, valid_labels = valid_data
+    test_iprs, test_esm, test_diam, test_seqs, test_dl2vec, test_ics, test_labels = test_data
     
     train_loader = FastTensorDataLoader(
         *train_data, batch_size=batch_size, shuffle=True)
@@ -104,7 +106,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
 
     
     optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
-    scheduler = MultiStepLR(optimizer, milestones=[3], gamma=0.1)
+    scheduler = MultiStepLR(optimizer, milestones=[1], gamma=0.1)
 
     best_loss = 10000.0
     if not load:
@@ -116,15 +118,16 @@ def main(data_root, ont, batch_size, epochs, load, device):
             lmbda = 0.1
             train_steps = int(math.ceil(len(train_labels) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
-                for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_labels in train_loader:
+                for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics, batch_labels in train_loader:
                     bar.update(1)
                     batch_iprs = batch_iprs.to(device)
                     batch_esm = batch_esm.to(device)
                     batch_diam = batch_diam.to(device)
                     batch_dl2vec = batch_dl2vec.to(device)
                     batch_seqs = batch_seqs.to(device)
+                    batch_ics = batch_ics.to(device)
                     batch_labels = batch_labels.to(device)
-                    logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec)
+                    logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics)
                     loss = F.binary_cross_entropy(logits, batch_labels)
                     # el_loss = net.el_loss(normal_forms)
                     total_loss = loss #+ el_loss
@@ -143,7 +146,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 valid_loss = 0
                 preds = []
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
-                    for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_labels in valid_loader:
+                    for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics, batch_labels in valid_loader:
                         bar.update(1)
                         batch_iprs = batch_iprs.to(device)
                         batch_esm = batch_esm.to(device)
@@ -151,7 +154,8 @@ def main(data_root, ont, batch_size, epochs, load, device):
                         batch_seqs = batch_seqs.to(device)
                         batch_labels = batch_labels.to(device)
                         batch_dl2vec = batch_dl2vec.to(device)
-                        logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec)
+                        batch_ics = batch_ics.to(device)
+                        logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics)
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
@@ -177,7 +181,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
         test_loss = 0
         preds = []
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
-            for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_labels in test_loader:
+            for batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics, batch_labels in test_loader:
                 bar.update(1)
                 batch_iprs = batch_iprs.to(device)
                 batch_esm = batch_esm.to(device)
@@ -185,7 +189,8 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 batch_seqs = batch_seqs.to(device)
                 batch_labels = batch_labels.to(device)
                 batch_dl2vec = batch_dl2vec.to(device)
-                logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec)
+                batch_ics = batch_ics.to(device)
+                logits = net(batch_iprs, batch_esm, batch_diam, batch_seqs, batch_dl2vec, batch_ics)
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
@@ -327,7 +332,7 @@ class MLPModel(nn.Module):
             net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
-        net.append(nn.ReLU())
+        # net.append(nn.ReLU())
         self.net = nn.Sequential(*net)
         
     def forward(self, features):
@@ -354,7 +359,7 @@ class DGESMModel(nn.Module):
 
 class DGCNNModel(nn.Module):
 
-    def __init__(self, nb_gos, device, nb_filters=512, max_kernel=129, hidden_dim=1024):
+    def __init__(self, nb_gos, device, nb_filters=64, max_kernel=257, hidden_dim=512):
         super().__init__()
         self.nb_gos = nb_gos
         # DeepGOCNN
@@ -367,8 +372,8 @@ class DGCNNModel(nn.Module):
                     nn.MaxPool1d(MAXLEN - kernel + 1)
                 ))
         self.convs = nn.ModuleList(convs)
-        self.fc1 = nn.Linear(len(kernels) * nb_filters, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, nb_gos)
+        self.fc1 = MLPBlock(len(kernels) * nb_filters, hidden_dim)
+        self.fc2 = MLPBlock(hidden_dim, nb_gos)
         
     def deepgocnn(self, proteins):
         n = proteins.shape[0]
@@ -376,8 +381,8 @@ class DGCNNModel(nn.Module):
         for conv in self.convs:
             output.append(conv(proteins))
         output = th.cat(output, dim=1)
-        output = th.relu(self.fc1(output.view(n, -1)))
-        output = th.relu(self.fc2(output))
+        output = self.fc1(output.view(n, -1))
+        output = self.fc2(output)
         return output
     
     def forward(self, proteins):
@@ -396,7 +401,7 @@ class DGDL2VModel(nn.Module):
             net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
-        net.append(nn.ReLU())
+        # net.append(nn.ReLU())
         self.net = nn.Sequential(*net)
         
     def forward(self, features):
@@ -417,51 +422,76 @@ class DG2Model(nn.Module):
         self.dgesm = dgesm
         # self.dgesm.requires_grad = False
         self.dgdl2v = dgdl2v
-        self.gcn = GATConv(5, 1, num_heads=1)
-        self.linear = nn.Linear(5, 1)
+        self.gcn1 = GATConv(5, 5, num_heads=1)
+        self.gcn2 = GATConv(5, 1, num_heads=1)
+        self.linear = nn.Linear(2, 1)
 
-    def forward(self, iprs, esm, diam, seqs, dl2vec):
+    def forward(self, iprs, esm, diam, seqs, dl2vec, ics):
         batch_size = iprs.shape[0]
         # dgzero = self.dgzero(iprs).reshape(-1, self.nb_gos, 1)
-        mlp = self.mlp(iprs).reshape(-1, self.nb_gos, 1)
-        dgcnn = self.dgcnn(seqs).reshape(-1, self.nb_gos, 1)
-        esm = self.dgesm(esm).reshape(-1, self.nb_gos, 1)
-        diam = diam.reshape(-1, self.nb_gos, 1)
-        dl2vec = self.dgdl2v(dl2vec).reshape(-1, self.nb_gos, 1)
-        x = th.cat((mlp, dgcnn, esm, diam, dl2vec), dim=2)
-        x = x.reshape(batch_size * self.nb_gos, -1)
-        logits = th.sigmoid(self.gcn(self.go_graph[batch_size], x).reshape(-1, self.nb_gos))
+        # mlp = self.mlp(iprs) #.reshape(-1, self.nb_gos, 1)
+        # dgcnn = self.dgcnn(seqs).reshape(-1, self.nb_gos, 1)
+        # esm = self.dgesm(esm).reshape(-1, self.nb_gos, 1)
+        # diam = diam.reshape(-1, self.nb_gos, 1)
+        ics = ics.reshape(-1, self.nb_gos, 1)
+        dl2vec = self.dgdl2v(dl2vec) #.reshape(-1, self.nb_gos, 1)
+        # x = th.cat((mlp, diam,), dim=2)
+        # x = x.reshape(batch_size * self.nb_gos, -1)
+        # x = self.gcn1(self.go_graph[batch_size], x)
+        # x = self.gcn2(self.go_graph[batch_size], x).reshape(-1, self.nb_gos)
+        logits = th.sigmoid(dl2vec)
         # logits = th.sigmoid(self.linear(x).reshape(-1, self.nb_gos))
         return logits
             
     
-def load_data(data_root, ont, terms_file):
+def load_data(data_root, ont, terms_file, go):
     terms_df = pd.read_pickle(terms_file)
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
+    terms_set = set(terms_dict)
     print('Terms', len(terms))
     
     ipr_df = pd.read_pickle(f'{data_root}/{ont}/interpros.pkl')
     iprs = ipr_df['interpros'].values
     iprs_dict = {v:k for k, v in enumerate(iprs)}
 
-    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data_diam.pkl')
-    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data_diam.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data_diam.pkl')
+    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
+    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
-    train_data = get_data(train_df, iprs_dict, terms_dict, ont)
-    valid_data = get_data(valid_df, iprs_dict, terms_dict, ont)
-    test_data = get_data(test_df, iprs_dict, terms_dict, ont)
+    annots_df = pd.concat([train_df, valid_df])
+    annotations = annots_df['prop_annotations'].values
+    annotations = list(map(lambda x: set(x), annotations))
+    cnt = Counter()
+    max_n = 0
+    for x in annotations:
+        cnt.update(x & terms_set)
+        
+    max_n = cnt.most_common(1)[0][1]
+    
+    scores = {}
+    for go_id, n in cnt.items():
+        score = n / max_n
+        scores[go_id] = score
+
+    train_data = get_data(train_df, iprs_dict, terms_dict, ont, scores)
+    valid_data = get_data(valid_df, iprs_dict, terms_dict, ont, scores)
+    test_data = get_data(test_df, iprs_dict, terms_dict, ont, scores)
 
     return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, iprs_dict, terms_dict, ont):
+def get_data(df, iprs_dict, terms_dict, ont, go_scores):
     iprs = th.zeros((len(df), len(iprs_dict)), dtype=th.float32)
     esm = th.zeros((len(df), 1280), dtype=th.float32)
     dl2vec = th.zeros((len(df), 100), dtype=th.float32)
     diam = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
+    ics = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     seqs = th.zeros((len(df), 21, MAXLEN), dtype=th.float32)
-
+    ic = th.zeros((len(terms_dict),), dtype=th.float32)
+    for go_id, go_ind in  terms_dict.items():
+        if go_id in go_scores:
+            ic[go_ind] = go_scores[go_id]
+    
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
         for ipr in row.interpros:
@@ -469,19 +499,18 @@ def get_data(df, iprs_dict, terms_dict, ont):
                 iprs[i, iprs_dict[ipr]] = 1
         esm[i, :] = th.FloatTensor(row.esm)
         dl2vec[i, :] = th.FloatTensor(getattr(row, f'{ont}_dl2vec'))
-        for go_id, score in row.diam_preds.items():
-            if go_id in terms_dict:
-                diam[i, terms_dict[go_id]] = float(score)
-
+        # for go_id, score in row.diam_preds.items():
+        #     if go_id in terms_dict:
+        #         diam[i, terms_dict[go_id]] = float(score)
         seq = row.sequences
         seq = th.FloatTensor(to_onehot(seq))
         seqs[i, :, :] = seq
-
+        ics[i, :] = ic
         for go_id in row.prop_annotations: # prop_annotations for full model
             if go_id in terms_dict:
                 g_id = terms_dict[go_id]
                 labels[i, g_id] = 1
-    return iprs, esm, diam, seqs, dl2vec, labels
+    return iprs, esm, diam, seqs, dl2vec, ics, labels
 
 if __name__ == '__main__':
     main()

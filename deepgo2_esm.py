@@ -260,7 +260,7 @@ class MLPBlock(nn.Module):
         return x
 
 
-class DGELModel(nn.Module):
+class DGESMModel(nn.Module):
 
     def __init__(self, input_length, nb_gos, nb_zero_gos, nb_rels, device, hidden_dim=1024, embed_dim=1024, margin=0.1):
         super().__init__()
