@@ -97,7 +97,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     
     mlp = MLPModel(n_iprs, n_terms, device).to(device)
     dgesm = DGESMModel(1280, n_terms, device).to(device)
-    dgdl2v = DGDL2VModel(100, n_terms, device).to(device)
+    dgdl2v = DGDL2VModel(200, n_terms, device).to(device)
     dgcnn = DGCNNModel(n_terms, device).to(device)
     
     net = DG2Model(graphs, n_terms, mlp, dgesm, dgcnn, dgdl2v, device).to(device)
@@ -105,7 +105,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     print(net)
 
     
-    optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
+    optimizer = th.optim.Adam(net.parameters(), lr=3e-4)
     scheduler = MultiStepLR(optimizer, milestones=[1], gamma=0.1)
 
     best_loss = 10000.0
@@ -350,7 +350,7 @@ class DGESMModel(nn.Module):
             net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
-        net.append(nn.ReLU())
+        # net.append(nn.ReLU())
         self.net = nn.Sequential(*net)
         
     def forward(self, features):
@@ -424,23 +424,23 @@ class DG2Model(nn.Module):
         self.dgdl2v = dgdl2v
         self.gcn1 = GATConv(5, 5, num_heads=1)
         self.gcn2 = GATConv(5, 1, num_heads=1)
-        self.linear = nn.Linear(2, 1)
+        self.linear = nn.Linear(4, 1)
 
     def forward(self, iprs, esm, diam, seqs, dl2vec, ics):
         batch_size = iprs.shape[0]
         # dgzero = self.dgzero(iprs).reshape(-1, self.nb_gos, 1)
-        # mlp = self.mlp(iprs) #.reshape(-1, self.nb_gos, 1)
-        # dgcnn = self.dgcnn(seqs).reshape(-1, self.nb_gos, 1)
-        # esm = self.dgesm(esm).reshape(-1, self.nb_gos, 1)
+        mlp = self.mlp(iprs).reshape(-1, self.nb_gos, 1)
+        dgcnn = self.dgcnn(seqs).reshape(-1, self.nb_gos, 1)
+        esm = self.dgesm(esm).reshape(-1, self.nb_gos, 1)
         # diam = diam.reshape(-1, self.nb_gos, 1)
-        ics = ics.reshape(-1, self.nb_gos, 1)
-        dl2vec = self.dgdl2v(dl2vec) #.reshape(-1, self.nb_gos, 1)
-        # x = th.cat((mlp, diam,), dim=2)
+        # ics = ics.reshape(-1, self.nb_gos, 1)
+        dl2vec = self.dgdl2v(dl2vec).reshape(-1, self.nb_gos, 1)
+        x = th.cat((mlp, dgcnn, dl2vec, esm), dim=2)
         # x = x.reshape(batch_size * self.nb_gos, -1)
         # x = self.gcn1(self.go_graph[batch_size], x)
         # x = self.gcn2(self.go_graph[batch_size], x).reshape(-1, self.nb_gos)
-        logits = th.sigmoid(dl2vec)
-        # logits = th.sigmoid(self.linear(x).reshape(-1, self.nb_gos))
+        # logits = th.sigmoid(esm)
+        logits = th.sigmoid(self.linear(x).reshape(-1, self.nb_gos))
         return logits
             
     
@@ -483,7 +483,7 @@ def load_data(data_root, ont, terms_file, go):
 def get_data(df, iprs_dict, terms_dict, ont, go_scores):
     iprs = th.zeros((len(df), len(iprs_dict)), dtype=th.float32)
     esm = th.zeros((len(df), 1280), dtype=th.float32)
-    dl2vec = th.zeros((len(df), 100), dtype=th.float32)
+    dl2vec = th.zeros((len(df), 200), dtype=th.float32)
     diam = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     ics = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     seqs = th.zeros((len(df), 21, MAXLEN), dtype=th.float32)

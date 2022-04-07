@@ -11,6 +11,7 @@ import json
 from Bio.PDB import PDBParser
 import torch as th
 import os
+import dgl
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,15 +32,11 @@ def calc_dist_matrix(chain_one, chain_two) :
 
 @ck.command()
 @ck.option(
-    '--data-file', '-df', default='data/swissprot_exp_esm.pkl',
+    '--data-file', '-df', default='data/swissprot_exp.pkl',
     help='DataFrame with proteins, sequences and annotations')
-@ck.option(
-    '--out-file', '-of', default='data/swissprot_exp_pdb.pkl',
-    help='with PDB features')
-def main(data_file, out_file):
+def main(data_file):
     df = pd.read_pickle(data_file)
 
-    pdb = []
     data_root = 'data/pdb/'
     parser = PDBParser()
     missing = 0
@@ -48,21 +45,31 @@ def main(data_file, out_file):
             bar.update(1)
             accessions = row.accessions.split(';')
             p_id = accessions[0]
-            seq_len = len(row.sequences)
+            seq_len = min(1000, len(row.sequences))
             filename = 'AF-' + p_id + '-F1-model_v2.pdb.gz'
-            if not os.path.exists(data_root + filename):
-                pdb.append(np.zeros((seq_len, seq_len), dtype=np.float32))
-                missing += 1
-                continue
-            pdb_file = gzip.open(data_root + filename, 'rt')
-            structure = parser.get_structure(p_id, pdb_file)
-            pdb_file.close()
-            model = structure[0]
-            chain = model['A']
-            dist_matrix = calc_dist_matrix(chain, chain)
-            pdb.append(dist_matrix)
-    df['pdb'] = pdb
-    df.to_pickle(out_file)
-    
+            if os.path.exists(data_root + filename):
+                pdb_file = gzip.open(data_root + filename, 'rt')
+                structure = parser.get_structure(p_id, pdb_file)
+                pdb_file.close()
+                model = structure[0]
+                chain = model['A']
+                dist_matrix = calc_dist_matrix(chain, chain)
+                dist_matrix = dist_matrix[:1000,:1000]
+                if dist_matrix.shape[0] == seq_len:
+                    src, dst = (dist_matrix < 8).nonzero()
+                    graph = dgl.graph((src, dst))
+                else:
+                    graph = dgl.graph(([], []), num_nodes=seq_len)
+            else:
+                graph = dgl.graph(([], []), num_nodes=seq_len)
+            graph = graph.add_self_loop()
+            
+            filename = row.proteins + '.pt'
+            data = th.load('data/swissprot_esm1b/' + filename)
+            features = data['representations'][33]
+            graph.ndata['h'] = features
+            dgl.save_graphs('data/graphs/' + row.proteins + '.bin', graph)
+            
+            
 if __name__ == '__main__':
     main()

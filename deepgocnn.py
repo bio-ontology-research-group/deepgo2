@@ -39,18 +39,17 @@ from torch.optim.lr_scheduler import MultiStepLR
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
-    model_file = f'{data_root}/{ont}/dl2vec.th'
+    model_file = f'{data_root}/{ont}/deepgocnn.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_dl2vec.pkl'
-
-    input_length = 200
-
+    out_file = f'{data_root}/{ont}/predictions_deepgocnn.pkl'
+    
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
-    terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, input_length)
+    iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont)
     n_terms = len(terms_dict)
-    
-    net = DGDL2VModel(input_length, n_terms, device).to(device)
+    n_iprs = len(iprs_dict)
+
+    net = DGCNNModel(n_terms, device).to(device)
     
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
@@ -179,44 +178,39 @@ class Residual(nn.Module):
     def forward(self, x):
         return x + self.fn(x)
     
-        
-class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.3, activation=nn.ReLU):
-        super().__init__()
-        self.linear = nn.Linear(in_features, out_features, bias)
-        self.activation = activation()
-        self.layer_norm = nn.LayerNorm(out_features) if layer_norm else None
-        self.dropout = nn.Dropout(dropout) if dropout else None
+class DGCNNModel(nn.Module):
 
-    def forward(self, x):
-        x = self.activation(self.linear(x))
-        if self.layer_norm:
-            x = self.layer_norm(x)
-        if self.dropout:
-            x = self.dropout(x)
-        return x
-
-
-class DGDL2VModel(nn.Module):
-
-    def __init__(self, input_length, nb_gos, device, nodes=[1024,]):
+    def __init__(self, nb_gos, device, nb_filters=512, max_kernel=129, hidden_dim=1024):
         super().__init__()
         self.nb_gos = nb_gos
-        net = []
-        for hidden_dim in nodes:
-            net.append(MLPBlock(input_length, hidden_dim))
-            net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
-            input_length = hidden_dim
-        net.append(nn.Linear(input_length, nb_gos))
-        net.append(nn.Sigmoid())
-        self.net = nn.Sequential(*net)
+        # DeepGOCNN
+        kernels = range(8, max_kernel, 8)
+        convs = []
+        for kernel in kernels:
+            convs.append(
+                nn.Sequential(
+                    nn.Conv1d(21, nb_filters, kernel, device=device),
+                    nn.MaxPool1d(MAXLEN - kernel + 1)
+                ))
+        self.convs = nn.ModuleList(convs)
+        self.fc1 = nn.Linear(len(kernels) * nb_filters, hidden_dim)
+        self.fc2 = nn.Linear(hidden_dim, nb_gos)
         
-    def forward(self, features):
-        return self.net(features)
-
+    def deepgocnn(self, proteins):
+        n = proteins.shape[0]
+        output = []
+        for conv in self.convs:
+            output.append(conv(proteins))
+        output = th.cat(output, dim=1)
+        output = th.relu(self.fc1(output.view(n, -1)))
+        output = th.sigmoid(self.fc2(output))
+        return output
     
-def load_data(data_root, ont, input_length):
+    def forward(self, proteins):
+        return self.deepgocnn(proteins)
+    
+def load_data(data_root, ont):
     terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
@@ -230,18 +224,19 @@ def load_data(data_root, ont, input_length):
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
     test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
-    
-    train_data = get_data(train_df, input_length, terms_dict, ont)
-    valid_data = get_data(valid_df, input_length, terms_dict, ont)
-    test_data = get_data(test_df, input_length, terms_dict, ont)
+    train_data = get_data(train_df, iprs_dict, terms_dict)
+    valid_data = get_data(valid_df, iprs_dict, terms_dict)
+    test_data = get_data(test_df, iprs_dict, terms_dict)
 
-    return terms_dict, train_data, valid_data, test_data, test_df
+    return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, input_length, terms_dict, ont):
-    data = th.zeros((len(df), input_length), dtype=th.float32)
+def get_data(df, iprs_dict, terms_dict):
+    data = th.zeros((len(df), 21, MAXLEN), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
-        data[i, :] = th.FloatTensor(getattr(row, f'{ont}_dl2vec'))
+        seq = row.sequences
+        seq = th.FloatTensor(to_onehot(seq))
+        data[i, :, :] = seq
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
                 g_id = terms_dict[go_id]

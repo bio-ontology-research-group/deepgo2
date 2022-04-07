@@ -27,7 +27,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--model', '-m', default='deepgozero_box',
+    '--model', '-m', default='deepgo2',
     help='Prediction model')
 @ck.option(
     '--combine', '-c', is_flag=True,
@@ -67,7 +67,6 @@ def main(data_root, ont, model, combine):
         else:
             preds = row.preds
         eval_preds.append(preds)
-    
     print('Computing Fmax')
     fmax = 0.0
     tmax = 0.0
@@ -79,7 +78,7 @@ def main(data_root, ont, model, combine):
     smin = 1000000.0
     rus = []
     mis = []
-
+    ont2 = 'mf'
     go_set = go_rels.get_namespace_terms(NAMESPACES[ont])
     go_set.remove(FUNC_DICT[ont])
     labels = test_df['prop_annotations'].values

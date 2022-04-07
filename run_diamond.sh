@@ -1,6 +1,6 @@
 data_root=$1
 
-for ont in mf bp cc; do
+for ont in mf bp cc all; do
     echo $ont
     python diamond_data.py -df $data_root/$ont/train_data.pkl -of $data_root/$ont/train_data.fa
     python diamond_data.py -df $data_root/$ont/valid_data.pkl -of $data_root/$ont/valid_data.fa

@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO)
     '--go-file', '-gf', default='data/go.obo',
     help='Gene Ontology file in OBO Format')
 @ck.option(
-    '--data-file', '-df', default='data/swissprot_exp_esm_dl2vec.pkl',
+    '--data-file', '-df', default='data/swissprot_exp_esm.pkl',
     help='Uniprot KB, generated with uni2pandas.py')
 @ck.option(
     '--sim-file', '-sf', default='data/swissprot_exp.sim',

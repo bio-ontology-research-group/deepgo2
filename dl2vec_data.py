@@ -41,9 +41,9 @@ def main(data_file, out_file):
         for st_id in row.string_ids:
             id_map[st_id] = row.proteins
         
-    for ont in ('mf', 'bp', 'cc', 'all'):
+    for ont in ('mf', 'bp', 'cc'):
         dl2vec = []
-        embeddings_file = f'data/{ont}/wv_embeddings'
+        embeddings_file = f'data/{ont}/wv_embeddings_node2vec'
         
         embeds = {}
         wv = KeyedVectors.load(embeddings_file)

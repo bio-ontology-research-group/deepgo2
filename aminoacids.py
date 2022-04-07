@@ -37,7 +37,7 @@ def to_tokens(seq):
         tokens[i] = AAINDEX.get(seq[i], 0)
     return tokens
 
-def to_onehot(seq, start=0):
+def to_onehot(seq, maxlen=MAXLEN, start=0):
     onehot = np.zeros((21, MAXLEN), dtype=np.float32)
     l = min(MAXLEN, len(seq))
     for i in range(start, start + l):

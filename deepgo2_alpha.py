@@ -1,3 +1,4 @@
+import os
 import click as ck
 import pandas as pd
 from utils import Ontology
@@ -6,17 +7,17 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from torch import optim
+from torch.optim.lr_scheduler import MultiStepLR
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
-from torch.utils.data import DataLoader, IterableDataset, TensorDataset
+from torch.utils.data import DataLoader, Dataset, TensorDataset
 from itertools import cycle
 import math
-from aminoacids import to_onehot, MAXLEN
-from dgl.nn import GraphConv
+from aminoacids import to_onehot, MAXLEN, AAINDEX
+from dgl.nn import GraphConv, GATConv
 import dgl
+from dgl.dataloading import GraphDataLoader
 from torch_utils import FastTensorDataLoader
-import csv
-from torch.optim.lr_scheduler import MultiStepLR
 
 
 @ck.command()
@@ -30,7 +31,7 @@ from torch.optim.lr_scheduler import MultiStepLR
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=256,
+    '--epochs', '-ep', default=32,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -38,45 +39,46 @@ from torch.optim.lr_scheduler import MultiStepLR
     '--device', '-d', default='cuda:1',
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
-    go_file = f'{data_root}/go.obo'
-    model_file = f'{data_root}/{ont}/dl2vec.th'
+    go_file = f'{data_root}/go.norm'
+    model_file = f'{data_root}/{ont}/deepgo2_alpha.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_dl2vec.pkl'
+    out_file = f'{data_root}/{ont}/predictions_deepgo2_alpha.pkl'
 
-    input_length = 200
-
-    go = Ontology(go_file, with_rels=True)
+    go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
-    terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, input_length)
+    terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file)
     n_terms = len(terms_dict)
     
-    net = DGDL2VModel(input_length, n_terms, device).to(device)
+    net = DGAlphaModel(1280, n_terms, device).to(device)
+    print(net)
+    train_graphs, train_labels = train_data
+    valid_graphs, valid_labels = valid_data
+    test_graphs, test_labels = test_data
     
-    train_features, train_labels = train_data
-    valid_features, valid_labels = valid_data
-    test_features, test_labels = test_data
+    train_dataset = MyDataset(train_graphs, train_labels)
+    valid_dataset = MyDataset(valid_graphs, valid_labels)
+    test_dataset = MyDataset(test_graphs, test_labels)
     
-    train_loader = FastTensorDataLoader(
-        *train_data, batch_size=batch_size, shuffle=True)
-    valid_loader = FastTensorDataLoader(
-        *valid_data, batch_size=batch_size, shuffle=False)
-    test_loader = FastTensorDataLoader(
-        *test_data, batch_size=batch_size, shuffle=False)
-
+    train_loader = GraphDataLoader(
+        train_dataset, batch_size=batch_size, shuffle=True)
+    valid_loader = GraphDataLoader(
+        valid_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = GraphDataLoader(
+        test_dataset, batch_size=batch_size, shuffle=False)
+    
     valid_labels = valid_labels.detach().cpu().numpy()
     test_labels = test_labels.detach().cpu().numpy()
     
-    optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
-    scheduler = MultiStepLR(optimizer, milestones=[1, 3,], gamma=0.1)
+    optimizer = th.optim.Adam(net.parameters(), lr=3e-4)
+    scheduler = MultiStepLR(optimizer, milestones=[5,], gamma=0.1)
 
     best_loss = 10000.0
     if not load:
         print('Training the model')
-        log_file = open(f'{data_root}/train_logs.tsv', 'w')
-        logger = csv.writer(log_file, delimiter='\t')
         for epoch in range(epochs):
             net.train()
             train_loss = 0
+            lmbda = 0.1
             train_steps = int(math.ceil(len(train_labels) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
                 for batch_features, batch_labels in train_loader:
@@ -85,11 +87,12 @@ def main(data_root, ont, batch_size, epochs, load, device):
                     batch_labels = batch_labels.to(device)
                     logits = net(batch_features)
                     loss = F.binary_cross_entropy(logits, batch_labels)
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
+                    total_loss = loss
                     train_loss += loss.detach().item()
-            
+                    optimizer.zero_grad()
+                    total_loss.backward()
+                    optimizer.step()
+                    
             train_loss /= train_steps
             
             print('Validation')
@@ -110,15 +113,14 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 valid_loss /= valid_steps
                 roc_auc = compute_roc(valid_labels, preds)
                 print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
-                logger.writerow([epoch, train_loss, valid_loss, roc_auc])
+
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
                 th.save(net.state_dict(), model_file)
 
-            scheduler.step()
+            #scheduler.step()
             
-        log_file.close()
 
     # Loading best model
     print('Loading the best model')
@@ -142,12 +144,13 @@ def main(data_root, ont, batch_size, epochs, load, device):
         roc_auc = compute_roc(test_labels, preds)
         print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
 
+        
     preds = list(preds)
     # Propagate scores using ontology structure
-    for i in range(len(preds)):
+    for i, scores in enumerate(preds):
         prop_annots = {}
         for go_id, j in terms_dict.items():
-            score = preds[i][j]
+            score = scores[j]
             for sup_go in go.get_anchestors(go_id):
                 if sup_go in prop_annots:
                     prop_annots[sup_go] = max(prop_annots[sup_go], score)
@@ -155,7 +158,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                     prop_annots[sup_go] = score
         for go_id, score in prop_annots.items():
             if go_id in terms_dict:
-                preds[i][terms_dict[go_id]] = score
+                scores[terms_dict[go_id]] = score
 
     test_df['preds'] = preds
 
@@ -169,7 +172,6 @@ def compute_roc(labels, preds):
 
     return roc_auc
 
-
 class Residual(nn.Module):
 
     def __init__(self, fn):
@@ -182,7 +184,7 @@ class Residual(nn.Module):
         
 class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.3, activation=nn.ReLU):
+    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.1, activation=nn.ReLU):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation()
@@ -198,55 +200,87 @@ class MLPBlock(nn.Module):
         return x
 
 
-class DGDL2VModel(nn.Module):
+class DGAlphaModel(nn.Module):
 
-    def __init__(self, input_length, nb_gos, device, nodes=[1024,]):
+    def __init__(self, input_length, nb_gos, device, nodes=[256,]):
         super().__init__()
         self.nb_gos = nb_gos
+
+        self.gcn1 = GraphConv(21, 256)
+        self.gcn2 = GraphConv(256, 256)
+        
         net = []
         for hidden_dim in nodes:
-            net.append(MLPBlock(input_length, hidden_dim))
+            net.append(MLPBlock(hidden_dim, hidden_dim))
             net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
-        net.append(nn.Linear(input_length, nb_gos))
+        net.append(nn.Linear(hidden_dim, nb_gos))
         net.append(nn.Sigmoid())
         self.net = nn.Sequential(*net)
         
-    def forward(self, features):
-        return self.net(features)
-
+    def forward(self, graphs):
+        x = self.gcn1(graphs, graphs.ndata['h'])
+        x = self.gcn2(graphs, x)
+        graphs.ndata['h'] = x
+        x = dgl.mean_nodes(graphs, 'h')
+        return self.net(x)
     
-def load_data(data_root, ont, input_length):
-    terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
+    
+def load_data(data_root, ont, terms_file):
+    terms_df = pd.read_pickle(terms_file)
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
     
-    ipr_df = pd.read_pickle(f'{data_root}/{ont}/interpros.pkl')
-    iprs = ipr_df['interpros'].values
-    iprs_dict = {v:k for k, v in enumerate(iprs)}
-
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
     test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
-    
-    train_data = get_data(train_df, input_length, terms_dict, ont)
-    valid_data = get_data(valid_df, input_length, terms_dict, ont)
-    test_data = get_data(test_df, input_length, terms_dict, ont)
+    train_data = get_data(train_df, terms_dict)
+    valid_data = get_data(valid_df, terms_dict)
+    test_data = get_data(test_df, terms_dict)
 
     return terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, input_length, terms_dict, ont):
-    data = th.zeros((len(df), input_length), dtype=th.float32)
+def get_data(df, terms_dict):
+    graphs = []
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
-    for i, row in enumerate(df.itertuples()):
-        data[i, :] = th.FloatTensor(getattr(row, f'{ont}_dl2vec'))
-        for go_id in row.prop_annotations:
-            if go_id in terms_dict:
-                g_id = terms_dict[go_id]
-                labels[i, g_id] = 1
-    return data, labels
+    index = []
+    with ck.progressbar(length=len(df), show_pos=True) as bar:
+        for i, row in enumerate(df.itertuples()):
+            graph_path = 'data/graphs/' + row.proteins + '.bin'
+            if not os.path.exists(graph_path):
+                continue
+            gs, _ = dgl.load_graphs(graph_path)
+            g = gs[0]
+            seq_len = min(1000, len(row.sequences))
+            onehot = th.zeros((seq_len, 21), dtype=th.float32)
+            for i in range(seq_len):
+                onehot[i, AAINDEX.get(row.sequences[i], 0)] = 1
+            g.ndata['h'] = onehot
+            graphs.append(g)
+            index.append(i)
+            for go_id in row.prop_annotations: # prop_annotations for full model
+                if go_id in terms_dict:
+                    g_id = terms_dict[go_id]
+                    labels[i, g_id] = 1
+            bar.update(1)
+    labels = labels[index, :]
+    return graphs, labels
+
+
+class MyDataset(Dataset):
+
+    def __init__(self, graphs, labels):
+        self.graphs = graphs
+        self.labels = labels
+        
+    def __getitem__(self, idx):
+        return self.graphs[idx], self.labels[idx]
+
+    def __len__(self):
+        return len(self.graphs)
+
 
 if __name__ == '__main__':
     main()
