@@ -24,10 +24,10 @@ from torch.optim.lr_scheduler import MultiStepLR
     '--data-root', '-dr', default='data',
     help='Prediction model')
 @ck.option(
-    '--ont', '-ont', default='cc',
+    '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=37,
+    '--batch-size', '-bs', default=256,
     help='Batch size for training')
 @ck.option(
     '--epochs', '-ep', default=32,
@@ -67,9 +67,9 @@ def main(data_root, ont, batch_size, epochs, load, device):
     valid_labels = valid_labels.detach().cpu().numpy()
     test_labels = test_labels.detach().cpu().numpy()
     
-    milestones = [1,5 ]
+    milestones = [1,5, 200000]
 #    milestones = [20000000]
-    optimizer = th.optim.Adam(net.parameters(), lr=1e-3, weight_decay = 0.00001)
+    optimizer = th.optim.Adam(net.parameters(), lr=5e-3, weight_decay = 0.0001)
     scheduler = MultiStepLR(optimizer, milestones=milestones, gamma=0.1)
 
     best_loss = 10000.0
@@ -241,7 +241,7 @@ def load_data(data_root, ont, input_length):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/old/test_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
     
     train_data = get_data(train_df, input_length, terms_dict, ont)

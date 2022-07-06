@@ -41,7 +41,7 @@ def main(data_file, out_file):
         for st_id in row.string_ids:
             id_map[st_id] = row.proteins
         
-    for ont in ("cc",): #('mf', 'bp', 'cc', 'all'):
+    for ont in ("cc", "mf", "bp"): #('mf', 'bp', 'cc', 'all'):
         dl2vec = []
         embeddings_file = f'data/{ont}/wv_embeddings_node2vec'
         
