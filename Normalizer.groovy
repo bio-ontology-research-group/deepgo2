@@ -5,6 +5,7 @@
     @Grab(group="net.sourceforge.owlapi", module="owlapi-impl", version="4.2.5"),
     @Grab(group="net.sourceforge.owlapi", module="owlapi-parsers", version="4.2.5"),
     @Grab(group="de.tu-dresden.inf.lat.jcel", module="jcel-owlapi", version="0.24.1"),
+    @Grab(group='commons-cli', module='commons-cli', version='1.4'),
     @GrabConfig(systemClassLoader=true)
 ])
 

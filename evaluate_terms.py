@@ -28,7 +28,7 @@ eval_terms = {
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--model', '-m', default='deepgozero_blast',
+    '--model', '-m', default='mlp_blast',
     help='Prediction model')
 @ck.option(
     '--combine', '-c', is_flag=True,
@@ -76,7 +76,7 @@ def main(data_root, ont, model, combine):
             roc_auc, fpr, tpr = compute_roc(labels[:, i], preds[:, i])
             if go_id in eval_terms[ont]:
                 df = pd.DataFrame({'fpr': fpr, 'tpr': tpr})
-                df.to_pickle(f'{data_root}/{ont}/zero_{go_id}_auc_train.pkl')
+                # df.to_pickle(f'{data_root}/{ont}/zero_{go_id}_auc_train.pkl')
                 print(go_id, roc_auc)
             total_sum += roc_auc
             aucs.append(roc_auc)
