@@ -28,6 +28,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
     help='Prediction model')
 @ck.option(
     '--model', '-m', default='deepgo2',
+
     help='Prediction model')
 @ck.option(
     '--combine', '-c', is_flag=True,

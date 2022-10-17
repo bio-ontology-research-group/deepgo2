@@ -29,7 +29,7 @@ def main(go_file, data_file, sim_file):
     logging.info('Processing annotations')
     
     annotations = list()
-    for ont in ['mf', 'bp', 'cc', 'all']:
+    for ont in ['cc', 'bp', 'mf']:#, 'bp', 'cc', 'all']:
         cnt = Counter()
         iprs = Counter()
         index = []
