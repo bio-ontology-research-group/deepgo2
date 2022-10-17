@@ -2,7 +2,7 @@ import os
 import click as ck
 import pandas as pd
 from utils import Ontology
-import torch as th
+import torch
 import numpy as np
 import torch
 from torch import nn
@@ -14,12 +14,12 @@ import copy
 from torch.utils.data import DataLoader, Dataset, TensorDataset
 from itertools import cycle
 import math
-from aminoacids import to_onehot, MAXLEN, AAINDEX
+from aminoacids import to_tokens, MAXLEN, AAINDEX
 from dgl.nn import GraphConv, GATConv, GATv2Conv
 import dgl
 from dgl.dataloading import GraphDataLoader
 from torch_utils import FastTensorDataLoader
-
+from transformers import T5EncoderModel
 
 @ck.command()
 @ck.option(
@@ -29,7 +29,7 @@ from torch_utils import FastTensorDataLoader
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=37,
+    '--batch-size', '-bs', default=4,
     help='Batch size for training')
 @ck.option(
     '--epochs', '-ep', default=32,
@@ -40,37 +40,34 @@ from torch_utils import FastTensorDataLoader
     '--device', '-d', default='cuda:1',
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
-    go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgo2_alpha.th'
+    go_file = f'{data_root}/go.obo'
+    model_file = f'{data_root}/{ont}/deepgo2_transa.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgo2_alpha.pkl'
+    out_file = f'{data_root}/{ont}/predictions_deepgo2_trans.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
     terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file)
     n_terms = len(terms_dict)
     
-    net = DGAlphaModel(1280, n_terms, device).to(device)
+    net = DGTransModel(n_terms, device).to(device)
     print(net)
-    train_data, train_graphs, train_labels = train_data
-    valid_data, valid_graphs, valid_labels = valid_data
-    test_data, test_graphs, test_labels = test_data
+    # train_data, train_graphs, train_labels = train_data
+    # valid_data, valid_graphs, valid_labels = valid_data
+    # test_data, test_graphs, test_labels = test_data
     
-    train_dataset = MyDataset(train_data, train_graphs, train_labels)
-    valid_dataset = MyDataset(valid_data, valid_graphs, valid_labels)
-    test_dataset = MyDataset(test_data, test_graphs, test_labels)
+    train_loader = FastTensorDataLoader(
+        *train_data, batch_size=batch_size, shuffle=True)
+    valid_loader = FastTensorDataLoader(
+        *valid_data, batch_size=batch_size, shuffle=False)
+    test_loader = FastTensorDataLoader(
+        *test_data, batch_size=batch_size, shuffle=False)
     
-    train_loader = GraphDataLoader(
-        train_dataset, batch_size=batch_size, shuffle=True)
-    valid_loader = GraphDataLoader(
-        valid_dataset, batch_size=batch_size, shuffle=False)
-    test_loader = GraphDataLoader(
-        test_dataset, batch_size=batch_size, shuffle=False)
+    train_labels = train_data[2].detach().cpu().numpy()
+    valid_labels = valid_data[2].detach().cpu().numpy()
+    test_labels = test_data[2].detach().cpu().numpy()
     
-    valid_labels = valid_labels.detach().cpu().numpy()
-    test_labels = test_labels.detach().cpu().numpy()
-    
-    optimizer = th.optim.Adam(net.parameters(), lr=3e-4)
+    optimizer = torch.optim.Adam(net.parameters(), lr=3e-4)
     scheduler = MultiStepLR(optimizer, milestones=[5,], gamma=0.1)
 
     best_loss = 10000.0
@@ -87,7 +84,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                     batch_features = batch_features.to(device)
                     batch_graphs = batch_graphs.to(device)
                     batch_labels = batch_labels.to(device)
-                    logits = net(batch_features, batch_graphs)
+                    logits = net(batch_features)
                     loss = F.binary_cross_entropy(logits, batch_labels)
                     total_loss = loss
                     train_loss += loss.detach().item()
@@ -99,7 +96,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
             
             print('Validation')
             net.eval()
-            with th.no_grad():
+            with torch.no_grad():
                 valid_steps = int(math.ceil(len(valid_labels) / batch_size))
                 valid_loss = 0
                 preds = []
@@ -109,7 +106,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                         batch_features = batch_features.to(device)
                         batch_graphs = batch_graphs.to(device)
                         batch_labels = batch_labels.to(device)
-                        logits = net(batch_features, batch_graphs)
+                        logits = net(batch_features)
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
@@ -120,16 +117,16 @@ def main(data_root, ont, batch_size, epochs, load, device):
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
-                th.save(net.state_dict(), model_file)
+                torch.save(net.state_dict(), model_file)
 
             #scheduler.step()
             
 
     # Loading best model
     print('Loading the best model')
-    net.load_state_dict(th.load(model_file))
+    net.load_state_dict(torch.load(model_file))
     net.eval()
-    with th.no_grad():
+    with torch.no_grad():
         test_steps = int(math.ceil(len(test_labels) / batch_size))
         test_loss = 0
         preds = []
@@ -139,7 +136,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 batch_features = batch_features.to(device)
                 batch_graphs = batch_graphs.to(device)
                 batch_labels = batch_labels.to(device)
-                logits = net(batch_features, batch_graphs)
+                logits = net(batch_features)
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
@@ -204,32 +201,99 @@ class MLPBlock(nn.Module):
         return x
 
 
-class DGAlphaModel(nn.Module):
+class PositionalEncoding(nn.Module):
+    r"""Inject some information about the relative or absolute position of the tokens in the sequence.
+        The positional encodings have the same dimension as the embeddings, so that the two can be summed.
+        Here, we use sine and cosine functions of different frequencies.
+    .. math:
+        \text{PosEncoder}(pos, 2i) = sin(pos/10000^(2i/d_model))
+        \text{PosEncoder}(pos, 2i+1) = cos(pos/10000^(2i/d_model))
+        \text{where pos is the word position and i is the embed idx)
+    Args:
+        d_model: the embed dim (required).
+        dropout: the dropout value (default=0.1).
+        max_len: the max. length of the incoming sequence (default=5000).
+    Examples:
+        >>> pos_encoder = PositionalEncoding(d_model)
+    """
 
-    def __init__(self, input_length, nb_gos, device, hidden_dim=1024):
+    def __init__(self, d_model, dropout=0.1, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        r"""Inputs of forward function
+        Args:
+            x: the sequence fed to the positional encoder model (required).
+        Shape:
+            x: [sequence length, batch size, embed dim]
+            output: [sequence length, batch size, embed dim]
+        Examples:
+            >>> output = pos_encoder(x)
+        """
+
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
+
+class DGTransModel(nn.Module):
+
+    def __init__(self, nb_gos, device, ninp=1024, ntoken=22, nlayers=6, nhead=1, nhid=1024, dropout=0.5):
         super().__init__()
         self.nb_gos = nb_gos
 
-        self.gcn1 = GATv2Conv(input_length, input_length, num_heads=1)
-        self.gcn2 = GATv2Conv(input_length, input_length, num_heads=1)
-        # self.gcn2 = GraphConv(input_length, input_length)
-        self.sag_pool = SAGPool(input_length)
-        
         net = []
-        net.append(MLPBlock(input_length * 2, hidden_dim))
-        net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
-        net.append(nn.Linear(hidden_dim, nb_gos))
+        net.append(MLPBlock(ninp, nhid))
+        net.append(Residual(MLPBlock(nhid, nhid)))
+        net.append(nn.Linear(nhid, nb_gos))
         net.append(nn.Sigmoid())
         self.net = nn.Sequential(*net)
-        
-    def forward(self, features, graphs):
-        x = self.gcn1(graphs, graphs.ndata['h'])
-        x = self.gcn2(graphs, x.reshape(x.size()[0], -1))
-        graphs, x, perm = self.sag_pool(graphs, x.reshape(x.size()[0], -1))
-        graphs.ndata['h'] = x #.reshape(x.size()[0], -1)
-        x = dgl.mean_nodes(graphs, 'h')
-        x = th.cat([features, x], dim=1)
-        return self.net(x)
+
+        self.transformer = T5EncoderModel.from_pretrained('Rostlab/prot_t5_xl_uniref50')
+        # self.src_mask = None
+        # self.pos_encoder = PositionalEncoding(ninp, dropout)
+        # encoder_layers = nn.TransformerEncoderLayer(ninp, nhead, nhid, dropout)
+        # self.transformer_encoder = nn.TransformerEncoder(encoder_layers, nlayers)
+        # self.encoder = nn.Embedding(ntoken, ninp)
+        # self.ninp = ninp
+        # self.decoder = nn.Linear(ninp, ntoken)
+
+    #     self.init_weights()
+
+    # def _generate_square_subsequent_mask(self, sz):
+    #     mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+    #     mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+    #     return mask
+
+    # def init_weights(self):
+    #     initrange = 0.1
+    #     nn.init.uniform_(self.encoder.weight, -initrange, initrange)
+    #     nn.init.zeros_(self.decoder.bias)
+    #     nn.init.uniform_(self.decoder.weight, -initrange, initrange)
+
+    def forward(self, src, has_mask=True):
+        # if has_mask:
+        #     device = src.device
+        #     if self.src_mask is None or self.src_mask.size(0) != len(src):
+        #         mask = self._generate_square_subsequent_mask(len(src)).to(device)
+        #         self.src_mask = mask
+        # else:
+        #     self.src_mask = None
+
+        # src = self.encoder(src) * math.sqrt(self.ninp)
+        # src = self.pos_encoder(src)
+        # output = self.transformer_encoder(src, self.src_mask)
+        # output = torch.mean(output, axis=1)
+        # output = self.decoder(output)
+        ouput = self.transformer(src)
+        return self.net(output)
     
     
 def load_data(data_root, ont, terms_file):
@@ -249,24 +313,21 @@ def load_data(data_root, ont, terms_file):
     return terms_dict, train_data, valid_data, test_data, test_df
 
 def get_data(df, terms_dict):
-    graphs = []
-    data = []
-    labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
+    graphs = torch.zeros((len(df), 1, 1), dtype=torch.float32)
+    data = torch.zeros((len(df), MAXLEN), dtype=torch.int32)
+    labels = torch.zeros((len(df), len(terms_dict)), dtype=torch.float32)
     index = []
     with ck.progressbar(length=len(df), show_pos=True) as bar:
         for i, row in enumerate(df.itertuples()):
-            graph_path = 'data/graphs/' + row.proteins + '.bin'
-            if not os.path.exists(graph_path):
-                continue
-            gs, _ = dgl.load_graphs(graph_path)
-            g = gs[0]
-            # seq_len = min(1000, len(row.sequences))
-            # onehot = th.zeros((seq_len, 21), dtype=th.float32)
-            # for i in range(seq_len):
-            #     onehot[i, AAINDEX.get(row.sequences[i], 0)] = 1
-            # g.ndata['h'] = onehot
-            graphs.append(g)
-            data.append(row.esm)
+            # graph_path = 'data/graphs/' + row.proteins + '.bin'
+            # if not os.path.exists(graph_path):
+            #     continue
+            # gs, _ = dgl.load_graphs(graph_path)
+            # g = gs[0]
+            # nnodes = g.num_nodes()
+            # graphs[i, :nnodes, :nnodes] = g.adj().to_dense()
+            tokens = to_tokens(row.sequences)
+            data[i, :] = torch.IntTensor(tokens)
             index.append(i)
             for go_id in row.prop_annotations: # prop_annotations for full model
                 if go_id in terms_dict:
@@ -276,96 +337,6 @@ def get_data(df, terms_dict):
     labels = labels[index, :]
     return data, graphs, labels
 
-
-class SAGPool(torch.nn.Module):
-    """The Self-Attention Pooling layer in paper 
-    `Self Attention Graph Pooling <https://arxiv.org/pdf/1904.08082.pdf>`
-    Args:
-        in_dim (int): The dimension of node feature.
-        ratio (float, optional): The pool ratio which determines the amount of nodes
-            remain after pooling. (default: :obj:`0.5`)
-        conv_op (torch.nn.Module, optional): The graph convolution layer in dgl used to
-        compute scale for each node. (default: :obj:`dgl.nn.GraphConv`)
-        non_linearity (Callable, optional): The non-linearity function, a pytorch function.
-            (default: :obj:`torch.tanh`)
-    """
-    def __init__(self, in_dim:int, ratio=0.3, conv_op=GraphConv, non_linearity=torch.tanh):
-        super(SAGPool, self).__init__()
-        self.in_dim = in_dim
-        self.ratio = ratio
-        self.score_layer = conv_op(in_dim, 1)
-        self.non_linearity = non_linearity
-    
-    def forward(self, graph:dgl.DGLGraph, feature:torch.Tensor):
-        score = self.score_layer(graph, feature).squeeze()
-        perm, next_batch_num_nodes = topk(score, self.ratio, get_batch_id(graph.batch_num_nodes()), graph.batch_num_nodes())
-        feature = feature[perm] * self.non_linearity(score[perm]).view(-1, 1)
-        graph = dgl.node_subgraph(graph, perm)
-
-        # node_subgraph currently does not support batch-graph,
-        # the 'batch_num_nodes' of the result subgraph is None.
-        # So we manually set the 'batch_num_nodes' here.
-        # Since global pooling has nothing to do with 'batch_num_edges',
-        # we can leave it to be None or unchanged.
-        graph.set_batch_num_nodes(next_batch_num_nodes)
-        
-        return graph, feature, perm
-
-def get_batch_id(num_nodes:torch.Tensor):
-    """Convert the num_nodes array obtained from batch graph to batch_id array
-    for each node.
-    Args:
-        num_nodes (torch.Tensor): The tensor whose element is the number of nodes
-            in each graph in the batch graph.
-    """
-    batch_size = num_nodes.size(0)
-    batch_ids = []
-    for i in range(batch_size):
-        item = torch.full((num_nodes[i],), i, dtype=torch.long, device=num_nodes.device)
-        batch_ids.append(item)
-    return torch.cat(batch_ids)
-
-def topk(x:torch.Tensor, ratio:float, batch_id:torch.Tensor, num_nodes:torch.Tensor):
-    """The top-k pooling method. Given a graph batch, this method will pool out some
-    nodes from input node feature tensor for each graph according to the given ratio.
-    Args:
-        x (torch.Tensor): The input node feature batch-tensor to be pooled.
-        ratio (float): the pool ratio. For example if :obj:`ratio=0.5` then half of the input
-            tensor will be pooled out.
-        batch_id (torch.Tensor): The batch_id of each element in the input tensor.
-        num_nodes (torch.Tensor): The number of nodes of each graph in batch.
-    
-    Returns:
-        perm (torch.Tensor): The index in batch to be kept.
-        k (torch.Tensor): The remaining number of nodes for each graph.
-    """
-    batch_size, max_num_nodes = num_nodes.size(0), num_nodes.max().item()
-    
-    cum_num_nodes = torch.cat(
-        [num_nodes.new_zeros(1),
-         num_nodes.cumsum(dim=0)[:-1]], dim=0)
-    
-    index = torch.arange(batch_id.size(0), dtype=torch.long, device=x.device)
-    index = (index - cum_num_nodes[batch_id]) + (batch_id * max_num_nodes)
-
-    dense_x = x.new_full((batch_size * max_num_nodes, ), torch.finfo(x.dtype).min)
-    dense_x[index] = x
-    dense_x = dense_x.view(batch_size, max_num_nodes)
-
-    _, perm = dense_x.sort(dim=-1, descending=True)
-    perm = perm + cum_num_nodes.view(-1, 1)
-    perm = perm.view(-1)
-
-    k = (ratio * num_nodes.to(torch.float)).ceil().to(torch.long)
-    # k[:] = 10
-    mask = [
-        torch.arange(k[i], dtype=torch.long, device=x.device) + 
-        i * max_num_nodes for i in range(batch_size)]
-
-    mask = torch.cat(mask, dim=0)
-    perm = perm[mask]
-
-    return perm, k
 
 
 class MyDataset(Dataset):

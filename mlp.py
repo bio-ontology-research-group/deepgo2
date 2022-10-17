@@ -209,7 +209,7 @@ class DGPROModel(nn.Module):
             net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
-        net.append(nn.ReLU())
+        net.append(nn.Sigmoid())
         self.net = nn.Sequential(*net)
         
     def forward(self, features):

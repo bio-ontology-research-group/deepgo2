@@ -11,7 +11,7 @@ from aminoacids import MAXLEN, to_ngrams
 import logging
 
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from utils import get_goplus_defs, MOLECULAR_FUNCTION, CELLULAR_COMPONENT, BIOLOGICAL_PROCESS
+from utils import Ontology, MOLECULAR_FUNCTION, CELLULAR_COMPONENT, BIOLOGICAL_PROCESS
 
 logging.basicConfig(level=logging.INFO)
 
@@ -37,6 +37,9 @@ def main(data_root, ont, model, combine):
     # Load interpro data
     test_data_file = f'{data_root}/{ont}/predictions_{model}.pkl'
     terms_file = f'{data_root}/{ont}/terms.pkl'
+    go = Ontology(f'{data_root}/go.obo')
+    go_set = go.get_term_set('GO:0005488')
+    
     df = pd.read_pickle(test_data_file)
 
     terms_df = pd.read_pickle(terms_file)
@@ -56,10 +59,7 @@ def main(data_root, ont, model, combine):
         annots.update(row.prop_annotations)
         
     for i, row in enumerate(df.itertuples()):
-        if combine:
-            preds[i, :] = row.blast_preds * alpha + row.preds * (1 - alpha)
-        else:
-            preds[i, :] = row.preds
+        preds[i, :] = row.preds
         annots.update(row.prop_annotations)
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
@@ -70,20 +70,14 @@ def main(data_root, ont, model, combine):
     aucs = []
     anns = []
     for go_id, i in terms_dict.items():
+        if go_id not in go_set:
+            continue
         pos_n = np.sum(labels[:, i])
         if pos_n > 0 and pos_n < len(df):
             total_n += 1
             roc_auc, fpr, tpr = compute_roc(labels[:, i], preds[:, i])
-            if go_id in eval_terms[ont]:
-                df = pd.DataFrame({'fpr': fpr, 'tpr': tpr})
-                # df.to_pickle(f'{data_root}/{ont}/zero_{go_id}_auc_train.pkl')
-                print(go_id, roc_auc)
+            print(go_id, roc_auc)
             total_sum += roc_auc
-            aucs.append(roc_auc)
-            anns.append(annots[go_id])
-    df = pd.DataFrame({'aucs': aucs, 'annots': anns})
-    df.to_pickle(f'{data_root}/{ont}/{model}_auc_annots.pkl')
-            # print(go_id, roc_auc)
     print(f'Average AUC for {ont} {total_sum / total_n:.3f}')
         
 def compute_roc(labels, preds):
