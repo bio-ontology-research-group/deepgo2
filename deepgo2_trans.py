@@ -20,6 +20,11 @@ import dgl
 from dgl.dataloading import GraphDataLoader
 from torch_utils import FastTensorDataLoader
 from transformers import T5EncoderModel
+from transformers import BertModel, BertTokenizer
+import re
+
+tokenizer = BertTokenizer.from_pretrained(
+    "Rostlab/prot_bert", do_lower_case=False)
 
 @ck.command()
 @ck.option(
@@ -29,7 +34,7 @@ from transformers import T5EncoderModel
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--batch-size', '-bs', default=4,
+    '--batch-size', '-bs', default=1,
     help='Batch size for training')
 @ck.option(
     '--epochs', '-ep', default=32,
@@ -41,7 +46,7 @@ from transformers import T5EncoderModel
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
-    model_file = f'{data_root}/{ont}/deepgo2_transa.th'
+    model_file = f'{data_root}/{ont}/deepgo2_trans.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
     out_file = f'{data_root}/{ont}/predictions_deepgo2_trans.pkl'
 
@@ -79,12 +84,12 @@ def main(data_root, ont, batch_size, epochs, load, device):
             lmbda = 0.1
             train_steps = int(math.ceil(len(train_labels) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
-                for batch_features, batch_graphs, batch_labels in train_loader:
+                for batch_features, batch_mask, batch_labels in train_loader:
                     bar.update(1)
                     batch_features = batch_features.to(device)
-                    batch_graphs = batch_graphs.to(device)
+                    batch_mask = batch_mask.to(device)
                     batch_labels = batch_labels.to(device)
-                    logits = net(batch_features)
+                    logits = net(batch_features, batch_mask)
                     loss = F.binary_cross_entropy(logits, batch_labels)
                     total_loss = loss
                     train_loss += loss.detach().item()
@@ -101,12 +106,12 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 valid_loss = 0
                 preds = []
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
-                    for batch_features, batch_graphs, batch_labels in valid_loader:
+                    for batch_features, batch_mask, batch_labels in valid_loader:
                         bar.update(1)
                         batch_features = batch_features.to(device)
-                        batch_graphs = batch_graphs.to(device)
+                        batch_mask = batch_mask.to(device)
                         batch_labels = batch_labels.to(device)
-                        logits = net(batch_features)
+                        logits = net(batch_features, batch_mask)
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
@@ -131,12 +136,12 @@ def main(data_root, ont, batch_size, epochs, load, device):
         test_loss = 0
         preds = []
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
-            for batch_features, batch_graphs, batch_labels in test_loader:
+            for batch_features, batch_mask, batch_labels in test_loader:
                 bar.update(1)
                 batch_features = batch_features.to(device)
-                batch_graphs = batch_graphs.to(device)
+                batch_mask = batch_mask.to(device)
                 batch_labels = batch_labels.to(device)
-                logits = net(batch_features)
+                logits = net(batch_features, batch_mask)
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
@@ -256,7 +261,7 @@ class DGTransModel(nn.Module):
         net.append(nn.Sigmoid())
         self.net = nn.Sequential(*net)
 
-        self.transformer = T5EncoderModel.from_pretrained('Rostlab/prot_t5_xl_uniref50')
+        self.transformer = BertModel.from_pretrained('Rostlab/prot_bert')
         # self.src_mask = None
         # self.pos_encoder = PositionalEncoding(ninp, dropout)
         # encoder_layers = nn.TransformerEncoderLayer(ninp, nhead, nhid, dropout)
@@ -278,7 +283,7 @@ class DGTransModel(nn.Module):
     #     nn.init.zeros_(self.decoder.bias)
     #     nn.init.uniform_(self.decoder.weight, -initrange, initrange)
 
-    def forward(self, src, has_mask=True):
+    def forward(self, src, mask, has_mask=True):
         # if has_mask:
         #     device = src.device
         #     if self.src_mask is None or self.src_mask.size(0) != len(src):
@@ -292,8 +297,8 @@ class DGTransModel(nn.Module):
         # output = self.transformer_encoder(src, self.src_mask)
         # output = torch.mean(output, axis=1)
         # output = self.decoder(output)
-        ouput = self.transformer(src)
-        return self.net(output)
+        hidden_state, pooled = self.transformer(src, mask, return_dict=False)
+        return self.net(pooled)
     
     
 def load_data(data_root, ont, terms_file):
@@ -301,41 +306,42 @@ def load_data(data_root, ont, terms_file):
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
-    
+    df = pd.read_pickle(f'{data_root}/swissprot_exp.pkl')
+    mask = torch.load('data/mask.pt')
+    mask_index = {v:k for k, v in enumerate(df['proteins'])}
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
     test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
-    train_data = get_data(train_df, terms_dict)
-    valid_data = get_data(valid_df, terms_dict)
-    test_data = get_data(test_df, terms_dict)
+    train_data = get_data(train_df, terms_dict, mask, mask_index)
+    valid_data = get_data(valid_df, terms_dict, mask, mask_index)
+    test_data = get_data(test_df, terms_dict, mask, mask_index)
 
     return terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, terms_dict):
-    graphs = torch.zeros((len(df), 1, 1), dtype=torch.float32)
+def get_data(df, terms_dict, mask, mask_index):
+    mask = torch.load('data/mask.pt').to_dense()
     data = torch.zeros((len(df), MAXLEN), dtype=torch.int32)
     labels = torch.zeros((len(df), len(terms_dict)), dtype=torch.float32)
     index = []
+    m_index = []
     with ck.progressbar(length=len(df), show_pos=True) as bar:
         for i, row in enumerate(df.itertuples()):
-            # graph_path = 'data/graphs/' + row.proteins + '.bin'
-            # if not os.path.exists(graph_path):
-            #     continue
-            # gs, _ = dgl.load_graphs(graph_path)
-            # g = gs[0]
-            # nnodes = g.num_nodes()
-            # graphs[i, :nnodes, :nnodes] = g.adj().to_dense()
-            tokens = to_tokens(row.sequences)
-            data[i, :] = torch.IntTensor(tokens)
+            m_index.append(mask_index[row.proteins])
+            seq = re.sub(r"[UZOB]", "X", row.sequences[:MAXLEN])
+            seq = ' '.join(seq)
+            tokens = tokenizer(seq, return_tensors='pt', padding='max_length', max_length=MAXLEN, add_special_tokens=False)
+            input_ids = tokens['input_ids']
+            data[i, :] = input_ids[0, :]
             index.append(i)
             for go_id in row.prop_annotations: # prop_annotations for full model
                 if go_id in terms_dict:
                     g_id = terms_dict[go_id]
                     labels[i, g_id] = 1
             bar.update(1)
-    labels = labels[index, :]
-    return data, graphs, labels
+    # labels = labels[index, :]
+    attn_mask = mask[m_index]
+    return data, attn_mask, labels
 
 
 

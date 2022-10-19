@@ -6,7 +6,9 @@ import pandas as pd
 import gzip
 import logging
 import torch as th
-
+from aminoacids import MAXLEN
+import torch
+import os
 
 #DGL imports
 import dgl
@@ -14,6 +16,25 @@ import dgl
 
 @ck.command()
 def main():
+    df = pd.read_pickle('data/swissprot_exp.pkl')
+    mask = torch.zeros((len(df), MAXLEN, MAXLEN), dtype=torch.uint8)
+    with ck.progressbar(length=len(df), show_pos=True) as bar:
+        for i, row in enumerate(df.itertuples()):
+            seq_len = min(MAXLEN, len(row.sequences))
+            graph_path = 'data/graphs/' + row.proteins + '.bin'
+            if os.path.exists(graph_path):
+                gs, _ = dgl.load_graphs(graph_path)
+                g = gs[0]
+                nnodes = g.num_nodes()
+                mask[i, :nnodes, :nnodes] = g.adj().to_dense()
+            else:
+                mask[i, :seq_len, :seq_len] = 1
+            bar.update(1)
+    mask = mask.to_sparse()
+    torch.save(mask, 'data/mask.pt')
+    
+    
+def save_ppi():
 
     dgl.save_graphs('data/go.bin', graph, {'etypes': etypes})
     df = pd.read_pickle('data/swissprot_interactions.pkl')
