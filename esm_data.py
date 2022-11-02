@@ -16,24 +16,24 @@ logging.basicConfig(level=logging.INFO)
 
 @ck.command()
 @ck.option(
-    '--data-file', '-df', default='data/swissprot_exp.pkl',
+    '--data-file', '-df', default='data/swissprot_exp_esm.pkl',
     help='DataFrame with proteins, sequences and annotations')
 @ck.option(
-    '--out-file', '-of', default='data/swissprot_exp_esm.pkl',
+    '--out-file', '-of', default='data/swissprot_exp_esm2.pkl',
     help='with ESM features')
 def main(data_file, out_file):
     df = pd.read_pickle(data_file)
 
     esm = []
-    data_root = 'data/swissprot_esm1b/'
+    data_root = 'data/swissprot_exp_esm2/'
     with ck.progressbar(length=len(df), show_pos=True) as bar:
         for i, row in df.iterrows():
             bar.update(1)
             filename = row.proteins + '.pt'
             data = th.load(data_root + filename)
-            emb = data['mean_representations'][33].numpy()
+            emb = data['mean_representations'][36].numpy()
             esm.append(emb)
-    df['esm'] = esm
+    df['esm2'] = esm
     df.to_pickle(out_file)
     
 if __name__ == '__main__':

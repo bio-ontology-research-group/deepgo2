@@ -38,16 +38,16 @@ from torch_utils import FastTensorDataLoader
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgo2_esm.th'
+    model_file = f'{data_root}/{ont}/deepgo2_esm2.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgo2_esm.pkl'
+    out_file = f'{data_root}/{ont}/predictions_deepgo2_esm2.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
     terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont, terms_file)
     n_terms = len(terms_dict)
     
-    net = DGESMModel(1280, n_terms, device).to(device)
+    net = DGESMModel(2560, n_terms, device).to(device)
     print(net)
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
@@ -229,10 +229,10 @@ def load_data(data_root, ont, terms_file):
     return terms_dict, train_data, valid_data, test_data, test_df
 
 def get_data(df, terms_dict):
-    data = th.zeros((len(df), 1280), dtype=th.float32)
+    data = th.zeros((len(df), 2560), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
-        data[i, :] = th.FloatTensor(row.esm)
+        data[i, :] = th.FloatTensor(row.esm2)
         for go_id in row.prop_annotations: # prop_annotations for full model
             if go_id in terms_dict:
                 g_id = terms_dict[go_id]
