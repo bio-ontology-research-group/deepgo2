@@ -76,8 +76,8 @@ def main(go_owl, go_file, data_file, sim_file):
         print(f'Number of {ont} iprs {len(iprs)}')
         print(f'Number of {ont} proteins {len(tdf)}')
     
-        terms_df = pd.DataFrame({'gos': terms})
-        terms_df.to_pickle(f'data/{ont}/terms.pkl')
+        # terms_df = pd.DataFrame({'gos': terms})
+        # terms_df.to_pickle(f'data/{ont}/terms.pkl')
         iprs_df = pd.DataFrame({'interpros': interpros})
         iprs_df.to_pickle(f'data/{ont}/interpros.pkl')
 

@@ -39,18 +39,20 @@ owlapi = OWLAPIAdapter()
     '--batch-size', '-bs', default=64,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=32,
+    '--epochs', '-ep', default=128,
     help='Training epochs')
+@ck.option(
+    '--model-name', '-m', default='deepgo2_falcon', help='Model name')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, load, device):
+def main(data_root, ont, batch_size, epochs, model_name, load, device):
     go_file = f'{data_root}/go.owl'
-    model_file = f'{data_root}/{ont}/deepgo2_falcon.th'
+    model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgo2_falcon.pkl'
+    out_file = f'{data_root}/{ont}/predictions_{model_name}.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     terms_dict, terms_index, train_data, valid_data, test_data, test_df, owl_dataset = load_data(data_root, ont, terms_file)
@@ -137,64 +139,61 @@ class DGFALCONModule(FALCONModule):
             tails_dict,
             embed_dim=embed_dim,
             anon_e=anon_e,)
-
+        self.embed_dim = embed_dim
         self.c_bias = nn.Embedding(nclasses, 1)
+        self.ci_embedding = nn.Embedding(nclasses, embed_dim)
+        # self.r_embedding = nn.Embedding(nrelations + 1, embed_dim * embed_dim)
         k = math.sqrt(1 / embed_dim)
         nn.init.uniform_(self.c_embedding.weight, -k, k)
+        nn.init.uniform_(self.ci_embedding.weight, -k, k)
         nn.init.uniform_(self.c_bias.weight, -k, k)
         
         self.project = nn.Sequential(
             MLPBlock(ninp, embed_dim),
             MLPBlock(embed_dim, embed_dim)
         )
+        self.mem_net = nn.Sequential(
+            nn.Linear(embed_dim * 2, 1),
+            nn.Sigmoid()
+        )
         self.hasFuncIndex = th.LongTensor([nrelations,]).to(device)
 
-    # def _get_c_fs_batch(self, c_emb, e_emb):
-    #     # e_emb = e_emb.unsqueeze(
-    #     #     dim=0).repeat(c_emb.size()[0], 1, 1)
-    #     # c_emb = c_emb.unsqueeze(dim=1).expand_as(e_emb)
-    #     # emb = th.cat([c_emb, e_emb], dim=-1)
-    #     # return th.sigmoid(self.fc_1(th.nn.functional.leaky_relu(self.fc_0(emb),
-    #     # negative_slope=0.1))).squeeze(dim=-1)
-    #     # return th.sigmoid(self.fc_0(emb)).squeeze(dim=-1)
-    #     return th.sigmoid(th.matmul(c_emb, e_emb.T))
+    def _get_c_fs_batch(self, c_emb, e_emb):
+        e_emb = e_emb.unsqueeze(
+            dim=0).repeat(c_emb.size()[0], 1, 1)
+        c_emb = c_emb.unsqueeze(dim=1).expand_as(e_emb)
+        return self._mem(c_emb, e_emb).squeeze(dim=-1)
 
     def _get_r_fs_batch(self, r_emb, e_emb):
         e_emb = e_emb.unsqueeze(
             dim=0).repeat(r_emb.size()[0], 1, 1)
         r_emb = r_emb.unsqueeze(dim=1).expand_as(e_emb)
-        emb = th.cat([r_emb + e_emb, e_emb], dim=-1)
-        # return th.sigmoid(self.fc_1(th.nn.functional.leaky_relu(self.fc_0(emb),
-        # negative_slope=0.1))).squeeze(dim=-1)
-        return th.sigmoid(self.fc_0(emb)).squeeze(dim=-1)
-        # return th.sigmoid(th.matmul(r_emb, e_emb.T))
+        c_emb = e_emb + r_emb
+        return self._mem(c_emb, e_emb).squeeze(dim=-1)
 
-    def embed_loss(self, prot_ids, features):
-        embeds = self.project(features)
-        falcon_embeds = self.e_embedding(prot_ids)
-        loss = 1 - th.sigmoid(th.sum(embeds * falcon_embeds, dim=1))
-        return loss.mean()
+    def _mem(self, c_emb, e_emb):
+        # emb = th.cat([c_emb, e_emb], dim=-1)
+        # return self.mem_net(emb)
+        return th.sigmoid(th.sum(c_emb * e_emb, dim=-1, keepdims=True))
 
     def function_predict(self, features, terms_index):
         x = self.project(features)
-        go_embed = self.c_embedding(terms_index)
+        go_embed = self.ci_embedding(terms_index)
         hasFunc = self.r_embedding(self.hasFuncIndex)
-        go_bias = self.c_bias(terms_index).view(1, -1)
+        # go_bias = self.c_bias(terms_index).view(1, -1)
         x = x + hasFunc
-        x = th.matmul(x, go_embed.T) + go_bias
+        x = th.matmul(x, go_embed.T)
         logits = th.sigmoid(x)
         return logits
 
-        # go_embed = go_embed.unsqueeze(
-        #     dim=0).repeat(x.size()[0], 1, 1)
-        # x = x.unsqueeze(dim=1).expand_as(go_embed)
-        # emb = th.cat([go_embed, x], dim=-1)
-        # return th.sigmoid(1 - th.sigmoid(self.fc_0(emb)).squeeze(dim=-1) + go_bias)
+        #go_embed = go_embed.unsqueeze(
+        #    dim=0).repeat(x.size()[0], 1, 1)
+        #x = x.unsqueeze(dim=1).expand_as(go_embed)
+        #return self._mem(x, go_embed).squeeze(dim=-1)
         
         
-    
     def forward(self, axiom, x, e_emb):
-        e_emb = self.project(e_emb)
+        # e_emb = self.project(e_emb)
         return super().forward(axiom, x, e_emb)
         
     
@@ -225,7 +224,7 @@ class DGFalconModel(EmbeddingALCModel):
         ).to(device)
         
     def train(self, train_data, valid_data, terms_index, batch_size=64):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.01)
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003)
         best_loss = float('inf')
 
         train_features, train_labels = train_data
@@ -250,6 +249,7 @@ class DGFalconModel(EmbeddingALCModel):
 
             train_loss = 0
             train_falcon_loss = 0
+            train_falcon_loss2 = 0
             train_steps = int(math.ceil(len(train_labels) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
                 for batch_features, batch_labels in train_loader:
@@ -257,27 +257,37 @@ class DGFalconModel(EmbeddingALCModel):
                     batch_labels = batch_labels.to(self.device)
                     logits = self.model.function_predict(batch_features, terms_index)
                     loss = F.binary_cross_entropy(logits, batch_labels)
-                    # optimizer.zero_grad()
-                    # loss.backward()
-                    # optimizer.step()
 
+                    c_inds = th.randint(self.nclasses, (batch_size,)).to(self.device)
+                    c_label = th.ones((batch_size, 1), dtype=th.float32).to(self.device)
+                    c_emb = self.model.c_embedding(c_inds)
+                    ci_emb = self.model.ci_embedding(c_inds)
+                    ci_loss = F.binary_cross_entropy(
+                        self.model._mem(c_emb, ci_emb), c_label)
+                    
                     train_loss += loss.detach().item()
                     axiom_loss = 0
+                    p_emb = self.model.project(batch_features)
+                    emb = th.cat([ci_emb, p_emb], dim=0)
+
                     for axiom, dataloader in self.training_dataloaders.items():
                         dataloader = iter(dataloader)
                         batch_data = next(dataloader)
                         x = batch_data[0]
                         xx = batch_data[0].to(self.device)
-                        axiom_loss += torch.mean(self.model(axiom, xx, batch_features))
+                        label = th.zeros((x.shape[0], 1), dtype=th.float32)
+                        axiom_loss += self.model(axiom, xx, emb)
                     optimizer.zero_grad()
-                    (loss + axiom_loss).backward()
+                    (loss + ci_loss + axiom_loss).backward()
                     optimizer.step()
                     train_falcon_loss += axiom_loss.detach().item()
+                    train_falcon_loss2 += ci_loss.detach().item()
                     
                     bar.update(1)
                 train_loss /= train_steps
+                train_falcon_loss /= train_steps * len(self.training_dataloaders)
+                train_falcon_loss2 /= train_steps
                 
-                        
 
             loss = 0
             with torch.no_grad():
@@ -298,7 +308,7 @@ class DGFalconModel(EmbeddingALCModel):
                 best_loss = valid_loss
                 torch.save(self.model.state_dict(), self.model_filepath)
                 print('Saved model', self.model_filepath)
-            print(f'Epoch {epoch}: Train loss: {train_loss}, {train_falcon_loss} Valid loss: {valid_loss}')
+            print(f'Epoch {epoch}: Train loss: {train_loss}, {train_falcon_loss}, {train_falcon_loss2} Valid loss: {valid_loss}')
 
 
     def evaluate(self, test_data, terms_index, batch_size=64):
