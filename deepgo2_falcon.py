@@ -15,6 +15,7 @@ from itertools import cycle
 import math
 from aminoacids import to_onehot, MAXLEN
 from torch_utils import FastTensorDataLoader
+from utils import FUNC_DICT
 import mowl
 mowl.init_jvm("10g")
 
@@ -46,9 +47,11 @@ owlapi = OWLAPIAdapter()
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 @ck.option(
+    '--zero', '-z', is_flag=True, help='Zero shot predictions?')
+@ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, model_name, load, device):
+def main(data_root, ont, batch_size, epochs, model_name, load, zero, device):
     go_file = f'{data_root}/go.owl'
     model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
@@ -66,7 +69,26 @@ def main(data_root, ont, batch_size, epochs, model_name, load, device):
         epochs=epochs, device=device)
     if not load:
         model.train(train_data, valid_data, terms_index, batch_size)
-    preds = model.evaluate(test_data, terms_index, batch_size)
+
+    if zero:
+        avg_auc = 0
+        zero_terms_dict, zero_terms_index, zero_data = load_data_zero(data_root, ont, owl_dataset)
+        zero_preds = model.predict(zero_data, zero_terms_index, batch_size)
+        features, labels = zero_data
+        count = 0
+        for go_id, i in zero_terms_dict.items():
+            if go_id == FUNC_DICT[ont]:
+                continue
+            preds = zero_preds[:, i]
+            label = labels[:, i]
+            auc = compute_roc(label, preds)
+            avg_auc += auc
+            count += 1
+            print(f'{go_id}\t{auc:.3f}')
+        print(f'AVG\t{avg_auc / count:.3f}')
+        return
+        
+    preds = model.predict(test_data, terms_index, batch_size)
 
     preds = list(preds)
     # Propagate scores using ontology structure
@@ -86,6 +108,8 @@ def main(data_root, ont, batch_size, epochs, model_name, load, device):
     test_df['preds'] = preds
 
     test_df.to_pickle(out_file)
+
+    
 
     
     
@@ -141,7 +165,7 @@ class DGFALCONModule(FALCONModule):
             anon_e=anon_e,)
         self.embed_dim = embed_dim
         self.c_bias = nn.Embedding(nclasses, 1)
-        self.ci_embedding = nn.Embedding(nclasses, embed_dim)
+        self.ci_embedding = nn.Embedding(nclasses * 10, embed_dim)
         # self.r_embedding = nn.Embedding(nrelations + 1, embed_dim * embed_dim)
         k = math.sqrt(1 / embed_dim)
         nn.init.uniform_(self.c_embedding.weight, -k, k)
@@ -157,6 +181,7 @@ class DGFALCONModule(FALCONModule):
             nn.Sigmoid()
         )
         self.hasFuncIndex = th.LongTensor([nrelations,]).to(device)
+        self.device = device
 
     def _get_c_fs_batch(self, c_emb, e_emb):
         e_emb = e_emb.unsqueeze(
@@ -178,19 +203,25 @@ class DGFALCONModule(FALCONModule):
 
     def function_predict(self, features, terms_index):
         x = self.project(features)
-        go_embed = self.ci_embedding(terms_index)
+        terms_n = terms_index.shape[0]
+        ci_ind = (terms_index * 10).reshape(terms_n, 1).repeat(1, 10)
+        ind = th.arange(10).to(self.device).reshape(1, 10)
+        ci_ind += ind
+        go_embed = self.ci_embedding(ci_ind.flatten())
         hasFunc = self.r_embedding(self.hasFuncIndex)
         # go_bias = self.c_bias(terms_index).view(1, -1)
         x = x + hasFunc
         x = th.matmul(x, go_embed.T)
         logits = th.sigmoid(x)
-        return logits
+        logits = logits.reshape(-1, 10)
+        logits, ind = logits.max(dim=1)
+        return logits.reshape(-1, terms_n)
 
         #go_embed = go_embed.unsqueeze(
         #    dim=0).repeat(x.size()[0], 1, 1)
         #x = x.unsqueeze(dim=1).expand_as(go_embed)
         #return self._mem(x, go_embed).squeeze(dim=-1)
-        
+
         
     def forward(self, axiom, x, e_emb):
         # e_emb = self.project(e_emb)
@@ -259,9 +290,10 @@ class DGFalconModel(EmbeddingALCModel):
                     loss = F.binary_cross_entropy(logits, batch_labels)
 
                     c_inds = th.randint(self.nclasses, (batch_size,)).to(self.device)
+                    ci_inds = c_inds * 10 + th.randint(10, (batch_size,)).to(self.device)
                     c_label = th.ones((batch_size, 1), dtype=th.float32).to(self.device)
                     c_emb = self.model.c_embedding(c_inds)
-                    ci_emb = self.model.ci_embedding(c_inds)
+                    ci_emb = self.model.ci_embedding(ci_inds)
                     ci_loss = F.binary_cross_entropy(
                         self.model._mem(c_emb, ci_emb), c_label)
                     
@@ -311,7 +343,7 @@ class DGFalconModel(EmbeddingALCModel):
             print(f'Epoch {epoch}: Train loss: {train_loss}, {train_falcon_loss}, {train_falcon_loss2} Valid loss: {valid_loss}')
 
 
-    def evaluate(self, test_data, terms_index, batch_size=64):
+    def predict(self, test_data, terms_index, batch_size=64):
 
         test_features, test_labels = test_data
 
@@ -383,9 +415,27 @@ def load_data(data_root, ont, terms_file):
     valid_data = get_data(valid_df, terms_dict)
     test_data = get_data(test_df, terms_dict)
 
-
     return terms_dict, terms_index, train_data, valid_data, test_data, test_df, owl_dataset
 
+def load_data_zero(data_root, ont, owl_dataset):
+    terms_df = pd.read_pickle(f'{data_root}/{ont}/zero_terms.pkl')
+    terms = terms_df['gos']
+    df = pd.read_pickle(f'{data_root}/{ont}/zero_test_df.pkl')
+    terms_index = []
+    new_terms = []
+    for go_id in terms:
+        go_cls = go_id.replace('GO:', 'http://purl.obolibrary.org/obo/GO_')
+        go_cls = owlapi.create_class(go_cls)
+        if go_cls in owl_dataset.class_to_id:
+            terms_index.append(owl_dataset.class_to_id[go_cls])
+            new_terms.append(go_id)
+    terms_index = torch.tensor(terms_index)
+    terms_dict = {v: i for i, v in enumerate(new_terms)}
+    print('Terms', len(terms_dict))
+    data = get_data(df, terms_dict)
+    return terms_dict, terms_index, data
+
+    
 def get_data(df, terms_dict):
     data = th.zeros((len(df), 2560), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
