@@ -38,9 +38,9 @@ from torch_utils import FastTensorDataLoader
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgozero_zero_10.th'
-    terms_file = f'{data_root}/{ont}/terms_zero_10.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgozero_zero_10.pkl'
+    model_file = f'{data_root}/{ont}/deepgozero.th'
+    terms_file = f'{data_root}/{ont}/terms.pkl'
+    out_file = f'{data_root}/{ont}/predictions_deepgozero.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
@@ -61,7 +61,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     nf4 = th.LongTensor(nf4).to(device)
     normal_forms = nf1, nf2, nf3, nf4
 
-    net = DGELModel(n_iprs, n_terms, n_zeros, n_rels, device).to(device)
+    net = DGZeroModel(n_iprs, n_terms, n_zeros, n_rels, device).to(device)
     print(net)
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
