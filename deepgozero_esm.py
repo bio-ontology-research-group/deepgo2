@@ -26,6 +26,9 @@ from torch_utils import FastTensorDataLoader
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
+    '--model-name', '-m', default='deepgozero_esm',
+    help='Prediction model')
+@ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
 @ck.option(
@@ -36,11 +39,11 @@ from torch_utils import FastTensorDataLoader
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, load, device):
+def main(data_root, ont, model_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgozero_esm.th'
+    model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgozero_esm.pkl'
+    out_file = f'{data_root}/{ont}/predictions_{model_name}.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
