@@ -66,7 +66,7 @@ def main(in_file, out_file, data_root, ont, threshold, batch_size, device):
                 preds = np.append(preds, logits.detach().cpu().numpy())
         preds = preds.reshape(-1, n_terms)
         
-    with gzip.open(out_file, 'w') as f:
+    with gzip.open(out_file, 'wt') as f:
         for i in range(len(proteins)):
             for j in range(n_terms):
                 if preds[i, j] > threshold:
