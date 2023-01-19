@@ -15,7 +15,7 @@ from Bio import SeqIO
 
 @ck.command()
 @ck.option('--in-file', '-if', help='Input FASTA file', required=True)
-@ck.option('--out-file', '-of', default='results.tsv', help='Output result file')
+@ck.option('--out-file', '-of', default='results.tsv.gz', help='Output result file')
 @ck.option(
     '--data-root', '-dr', default='data',
     help='Prediction model')
@@ -70,7 +70,7 @@ def main(in_file, out_file, data_root, ont, threshold, batch_size, device):
         for i in range(len(proteins)):
             for j in range(n_terms):
                 if preds[i, j] > threshold:
-                    f.write(f'{proteins[i].id}\t{terms[j]}\t{preds[i,j]:0.3f}\n') 
+                    f.write(f'{proteins[i]}\t{terms[j]}\t{preds[i,j]:0.3f}\n') 
 
 if __name__ == '__main__':
     main()
