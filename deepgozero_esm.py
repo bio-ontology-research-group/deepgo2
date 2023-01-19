@@ -13,8 +13,6 @@ from torch.utils.data import DataLoader, IterableDataset, TensorDataset
 from itertools import cycle
 import math
 from aminoacids import to_onehot, MAXLEN
-from dgl.nn import GraphConv, GATConv
-import dgl
 from torch_utils import FastTensorDataLoader
 
 
@@ -32,7 +30,7 @@ from torch_utils import FastTensorDataLoader
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=256,
+    '--epochs', '-ep', default=128,
     help='Training epochs')
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
@@ -64,7 +62,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     nf4 = th.LongTensor(nf4).to(device)
     normal_forms = nf1, nf2, nf3, nf4
 
-    net = DGZeroModel(n_iprs, n_terms, n_zeros, n_rels, device).to(device)
+    net = DGZeroModel(2560, n_terms, n_zeros, n_rels, device).to(device)
     print(net)
     train_features, train_labels = train_data
     valid_features, valid_labels = valid_data
@@ -141,6 +139,22 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     print('Loading the best model')
     net.load_state_dict(th.load(model_file))
     net.eval()
+
+    with th.no_grad():
+        valid_steps = int(math.ceil(len(valid_labels) / batch_size))
+        valid_loss = 0
+        preds = []
+        with ck.progressbar(length=valid_steps, show_pos=True) as bar:
+            for batch_features, batch_labels in valid_loader:
+                bar.update(1)
+                batch_features = batch_features.to(device)
+                batch_labels = batch_labels.to(device)
+                logits = net(batch_features)
+                batch_loss = F.binary_cross_entropy(logits, batch_labels)
+                valid_loss += batch_loss.detach().item()
+                preds = np.append(preds, logits.detach().cpu().numpy())
+        valid_loss /= valid_steps
+
     with th.no_grad():
         test_steps = int(math.ceil(len(test_labels) / batch_size))
         test_loss = 0
@@ -157,9 +171,9 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
             test_loss /= test_steps
         preds = preds.reshape(-1, n_terms)
         roc_auc = compute_roc(test_labels, preds)
-        print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
+        print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}')
 
-        
+    return
     preds = list(preds)
     # Propagate scores using ontology structure
     for i, scores in enumerate(preds):
