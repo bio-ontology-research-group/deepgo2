@@ -173,7 +173,6 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
         roc_auc = compute_roc(test_labels, preds)
         print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}')
 
-    return
     preds = list(preds)
     # Propagate scores using ontology structure
     for i, scores in enumerate(preds):
