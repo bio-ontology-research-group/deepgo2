@@ -44,7 +44,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_{model_name}.pkl'
+    out_file = f'{data_root}/{ont}/valid_predictions_{model_name}.pkl'
 
     go = Ontology(go_file, with_rels=True)
 
@@ -165,6 +165,20 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     net.load_state_dict(th.load(model_file))
     net.eval()
     with th.no_grad():
+        valid_steps = int(math.ceil(len(valid_nids) / batch_size))
+        valid_loss = 0
+        preds = []
+        with ck.progressbar(length=valid_steps, show_pos=True) as bar:
+            for input_nodes, output_nodes, blocks in valid_dataloader:
+                bar.update(1)
+                logits = net(input_nodes, output_nodes, blocks)
+                batch_labels = labels[output_nodes]
+                batch_loss = F.binary_cross_entropy(logits, batch_labels)
+                valid_loss += batch_loss.detach().item()
+                preds = np.append(preds, logits.detach().cpu().numpy())
+            valid_loss /= valid_steps
+    
+    with th.no_grad():
         test_steps = int(math.ceil(len(test_nids) / batch_size))
         test_loss = 0
         preds = []
@@ -179,7 +193,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
             test_loss /= test_steps
         preds = preds.reshape(-1, n_terms)
         roc_auc = compute_roc(test_labels, preds)
-        print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
+    print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, AUC - {roc_auc}')
 
     preds = list(preds)
     # Propagate scores using ontology structure
@@ -434,7 +448,7 @@ def load_data(data_root, ont):
     graph.ndata['feat'] = data
     graph.ndata['labels'] = labels
     train_nids, valid_nids, test_nids = nids['train_nids'], nids['valid_nids'], nids['test_nids']
-    return terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
+    return terms_dict, graph, train_nids, valid_nids, valid_nids, data, labels, valid_df
 
 def get_data(df, terms_dict, mfs_dict):
     data = th.zeros((len(df), 6851), dtype=th.float32)
