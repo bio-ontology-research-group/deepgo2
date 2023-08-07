@@ -44,7 +44,7 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_{model_name}.pkl'
+    out_file = f'{data_root}/{ont}/nextprot_predictions_{model_name}.pkl'
     out_file_valid = f'{data_root}/{ont}/valid_predictions_{model_name}.pkl'
 
     go = Ontology(go_file, with_rels=True)
@@ -165,21 +165,21 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
     print('Loading the best model')
     net.load_state_dict(th.load(model_file))
     net.eval()
-
-    with th.no_grad():
-        valid_steps = int(math.ceil(len(valid_nids) / batch_size))
-        valid_loss = 0
-        valid_preds = []
-        with ck.progressbar(length=valid_steps, show_pos=True) as bar:
-            for input_nodes, output_nodes, blocks in valid_dataloader:
-                bar.update(1)
-                logits = net(input_nodes, output_nodes, blocks)
-                batch_labels = labels[output_nodes]
-                batch_loss = F.binary_cross_entropy(logits, batch_labels)
-                valid_loss += batch_loss.detach().item()
-                valid_preds = np.append(valid_preds, logits.detach().cpu().numpy())
-            valid_loss /= valid_steps
-            valid_preds = valid_preds.reshape(-1, n_terms)
+    valid_loss = 0
+    # with th.no_grad():
+    #     valid_steps = int(math.ceil(len(valid_nids) / batch_size))
+    #     valid_loss = 0
+    #     valid_preds = []
+    #     with ck.progressbar(length=valid_steps, show_pos=True) as bar:
+    #         for input_nodes, output_nodes, blocks in valid_dataloader:
+    #             bar.update(1)
+    #             logits = net(input_nodes, output_nodes, blocks)
+    #             batch_labels = labels[output_nodes]
+    #             batch_loss = F.binary_cross_entropy(logits, batch_labels)
+    #             valid_loss += batch_loss.detach().item()
+    #             valid_preds = np.append(valid_preds, logits.detach().cpu().numpy())
+    #         valid_loss /= valid_steps
+    #         valid_preds = valid_preds.reshape(-1, n_terms)
         
                 
     with th.no_grad():
@@ -199,25 +199,24 @@ def main(data_root, ont, model_name, batch_size, epochs, load, device):
         roc_auc = compute_roc(test_labels, preds)
     print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, AUC - {roc_auc}')
 
+    # valid_preds = list(valid_preds)
+    # # Propagate scores using ontology structure
+    # for i in range(len(valid_preds)):
+    #     prop_annots = {}
+    #     for go_id, j in terms_dict.items():
+    #         score = valid_preds[i][j]
+    #         for sup_go in go.get_anchestors(go_id):
+    #             if sup_go in prop_annots:
+    #                 prop_annots[sup_go] = max(prop_annots[sup_go], score)
+    #             else:
+    #                 prop_annots[sup_go] = score
+    #     for go_id, score in prop_annots.items():
+    #         if go_id in terms_dict:
+    #             valid_preds[i][terms_dict[go_id]] = score
 
-    valid_preds = list(valid_preds)
-    # Propagate scores using ontology structure
-    for i in range(len(valid_preds)):
-        prop_annots = {}
-        for go_id, j in terms_dict.items():
-            score = valid_preds[i][j]
-            for sup_go in go.get_anchestors(go_id):
-                if sup_go in prop_annots:
-                    prop_annots[sup_go] = max(prop_annots[sup_go], score)
-                else:
-                    prop_annots[sup_go] = score
-        for go_id, score in prop_annots.items():
-            if go_id in terms_dict:
-                valid_preds[i][terms_dict[go_id]] = score
+    # valid_df['preds'] = valid_preds
 
-    valid_df['preds'] = valid_preds
-
-    valid_df.to_pickle(out_file_valid)
+    # valid_df.to_pickle(out_file_valid)
 
     
     preds = list(preds)
@@ -463,10 +462,10 @@ def load_data(data_root, ont):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data_mf.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data_mf.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data_mf.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi.bin')
+    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi_nextprot.bin')
 
     data, labels = get_data(df, terms_dict, mfs_dict)
     graph = graphs[0]

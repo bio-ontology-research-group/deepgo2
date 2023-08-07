@@ -37,7 +37,7 @@ def main(in_file, data_root, threshold, batch_size, device):
     for ont in ['mf', 'cc', 'bp']:        
         model_file = f'{data_root}/{ont}/deepgozero_esm_plus_{best[ont]}.th'
         terms_file = f'{data_root}/{ont}/terms.pkl'
-        out_file = f'data/cafa5/dg0esmplus_{ont}.tsv.gz'
+        out_file = f'results_{ont}.tsv.gz'
         terms_df = pd.read_pickle(terms_file)
         terms = terms_df['gos'].values.flatten()
         terms_dict = {v: i for i, v in enumerate(terms)}
@@ -69,9 +69,9 @@ def main(in_file, data_root, threshold, batch_size, device):
         with gzip.open(out_file, 'wt') as f:
             for i in range(len(proteins)):
                 for j in range(n_terms):
-                    if preds[i, j] >= threshold:
+                    if preds[i, j] > threshold:
                         name = go.get_term(terms[j])['name']
-                        f.write(f'{proteins[i]}\t{terms[j]}\t{preds[i,j]:0.3f}\n') 
+                        f.write(f'{proteins[i]}\t{terms[j]}\t{preds[i,j]:0.3f}\t{name}\n') 
 
 if __name__ == '__main__':
     main()

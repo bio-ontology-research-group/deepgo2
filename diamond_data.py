@@ -6,7 +6,6 @@ import pandas as pd
 import gzip
 
 from collections import Counter
-from aminoacids import MAXLEN, to_ngrams
 import logging
 
 logging.basicConfig(level=logging.INFO)

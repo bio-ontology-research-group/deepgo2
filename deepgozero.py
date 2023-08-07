@@ -26,6 +26,9 @@ from torch_utils import FastTensorDataLoader
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
+    '--model-name', '-m', default='deepgozero',
+    help='Prediction model')
+@ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
 @ck.option(
@@ -36,11 +39,11 @@ from torch_utils import FastTensorDataLoader
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, load, device):
+def main(data_root, ont, model_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgozero.th'
+    model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgozero.pkl'
+    out_file = f'{data_root}/{ont}/predictions_nextprot_{model_name}.pkl'
 
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     loss_func = nn.BCELoss()
@@ -403,7 +406,7 @@ def load_data(data_root, ont, terms_file):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     train_data = get_data(train_df, iprs_dict, terms_dict)
     valid_data = get_data(valid_df, iprs_dict, terms_dict)

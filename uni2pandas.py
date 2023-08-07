@@ -13,10 +13,10 @@ ORGS = set(['HUMAN', 'MOUSE', ])
 
 @ck.command()
 @ck.option(
-    '--swissprot-file', '-sf', default='data/uniprot_sprot_2021_04.dat.gz',
+    '--swissprot-file', '-sf', default='data/uniprot_sprot_2022_04.dat.gz',
     help='UniProt/SwissProt knowledgebase file in text format (archived)')
 @ck.option(
-    '--out-file', '-o', default='data/swissprot.pkl',
+    '--out-file', '-o', default='data/swissprot_exp_2022_04.pkl',
     help='Result file with a list of proteins, sequences and annotations')
 def main(swissprot_file, out_file):
     go = Ontology('data/go.obo', with_rels=True)
@@ -42,12 +42,12 @@ def main(swissprot_file, out_file):
             if is_exp_code(code):
                 annots.append(go_id)
         # Ignore proteins without experimental annotations
-        # if len(annots) == 0:
-        #     continue
-        # index.append(i)
+        if len(annots) == 0:
+            continue
+        index.append(i)
         annotations.append(annots)
-    # df = df.iloc[index]
-    # df = df.reset_index()
+    df = df.iloc[index]
+    df = df.reset_index()
     df['exp_annotations'] = annotations
 
     prop_annotations = []

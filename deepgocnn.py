@@ -41,7 +41,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/deepgocnn.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgocnn.pkl'
+    out_file = f'{data_root}/{ont}/predictions_nextprot_deepgocnn.pkl'
     
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
@@ -190,7 +190,7 @@ class DGCNNModel(nn.Module):
         for kernel in kernels:
             convs.append(
                 nn.Sequential(
-                    nn.Conv1d(21, nb_filters, kernel, device=device),
+                    nn.Conv1d(22, nb_filters, kernel, device=device),
                     nn.MaxPool1d(MAXLEN - kernel + 1)
                 ))
         self.convs = nn.ModuleList(convs)
@@ -222,7 +222,7 @@ def load_data(data_root, ont):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     train_data = get_data(train_df, iprs_dict, terms_dict)
     valid_data = get_data(valid_df, iprs_dict, terms_dict)
@@ -231,7 +231,7 @@ def load_data(data_root, ont):
     return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
 
 def get_data(df, iprs_dict, terms_dict):
-    data = th.zeros((len(df), 21, MAXLEN), dtype=th.float32)
+    data = th.zeros((len(df), 22, MAXLEN), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
         seq = row.sequences

@@ -24,7 +24,7 @@ logging.basicConfig(level=logging.INFO)
     '--go-file', '-gf', default='data/go.obo',
     help='Gene Ontology file in OBO Format')
 @ck.option(
-    '--data-file', '-df', default='data/swissprot_exp_esm2.pkl',
+    '--data-file', '-df', default='data/swissprot_exp_mf.pkl',
     help='Uniprot KB, generated with uni2pandas.py')
 @ck.option(
     '--sim-file', '-sf', default='data/swissprot_exp.sim',
@@ -78,8 +78,8 @@ def main(go_owl, go_file, data_file, sim_file):
     
         # terms_df = pd.DataFrame({'gos': terms})
         # terms_df.to_pickle(f'data/{ont}/terms.pkl')
-        iprs_df = pd.DataFrame({'interpros': interpros})
-        iprs_df.to_pickle(f'data/{ont}/interpros.pkl')
+        #iprs_df = pd.DataFrame({'interpros': interpros})
+        #iprs_df.to_pickle(f'data/{ont}/interpros.pkl')
 
         # Split train/valid/test
         proteins = tdf['proteins']
@@ -151,22 +151,22 @@ def main(go_owl, go_file, data_file, sim_file):
         test_index = np.array(test_index)
 
         train_df = tdf.iloc[train_index]
-        train_df.to_pickle(f'data/{ont}/train_data.pkl')
+        #train_df.to_pickle(f'data/{ont}/train_data_mf.pkl')
         train_ont = owlapi.owl_manager.createOntology()
         owlapi.owl_manager.addAxioms(train_ont, go_owl.getTBoxAxioms(Imports.EXCLUDED))
         # add_functions_to_ont(owlapi, train_ont, train_df)
-        train_ont_file = os.path.abspath(f'data/{ont}/train_data.owl')
-        owlapi.owl_manager.saveOntology(train_ont, IRI.create('file://' + train_ont_file))
+        #train_ont_file = os.path.abspath(f'data/{ont}/train_data.owl')
+        #owlapi.owl_manager.saveOntology(train_ont, IRI.create('file://' + train_ont_file))
         
         valid_df = tdf.iloc[valid_index]
-        valid_df.to_pickle(f'data/{ont}/valid_data.pkl')
+        #valid_df.to_pickle(f'data/{ont}/valid_data_mf.pkl')
         # valid_ont = owlapi.owl_manager.createOntology()
         # add_functions_to_ont(owlapi, valid_ont, valid_df)
         # valid_ont_file = os.path.abspath(f'data/{ont}/valid_data.owl')
         # owlapi.owl_manager.saveOntology(
         #     valid_ont, IRI.create('file://' + valid_ont_file))
         test_df = tdf.iloc[test_index]
-        test_df.to_pickle(f'data/{ont}/test_data.pkl')
+        #test_df.to_pickle(f'data/{ont}/test_data_mf.pkl')
         # test_ont = owlapi.owl_manager.createOntology()
         # add_functions_to_ont(owlapi, test_ont, test_df)
         # test_ont_file = os.path.abspath(f'data/{ont}/test_data.owl')

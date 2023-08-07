@@ -29,10 +29,16 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 @ck.option(
     '--ont', '-ont', default='mf',
     help='Sub ontology')
-def main(data_root, model_name, ont):
+@ck.option(
+    '--combine', '-c', default='avg',
+    help='Combination strategy for entailment')
+@ck.option(
+    '--n-models', '-nm', default=6,
+    help='Top N models for semantic entailment')
+def main(data_root, model_name, ont, combine, n_models):
     train_data_file = f'{data_root}/{ont}/train_data.pkl'
     valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
-    test_data_file = f'{data_root}/{ont}/predictions_{model_name}_0.pkl'
+    test_data_file = f'{data_root}/{ont}/nextprot_predictions_{model_name}_0.pkl'
     terms_file = f'{data_root}/{ont}/terms.pkl'
     go_rels = Ontology(f'{data_root}/go.obo', with_rels=True)
     terms_df = pd.read_pickle(terms_file)
@@ -57,26 +63,42 @@ def main(data_root, model_name, ont):
 
     # Obtain predictions from falcon models
     eval_preds = []
-    top_models = get_top_models(ont, model_name)
+    top_models = get_top_models(ont, model_name, n_models)
     for i in top_models: #range(6):#[0, 5, 6, 8]:
         #if i not in top_models:
         #    continue
-        test_df = pd.read_pickle(f'{data_root}/{ont}/predictions_{model_name}_{i}.pkl')
+        test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_predictions_{model_name}_{i}.pkl')
         for j, row in enumerate(test_df.itertuples()):
             if j == len(eval_preds):
                 eval_preds.append(row.preds)
             else:
-                eval_preds[j] = eval_preds[j] + row.preds
-                # eval_preds[j] = np.maximum(eval_preds[j], row.preds)
-
+                if combine == 'max':
+                    eval_preds[j] = np.maximum(eval_preds[j], row.preds)
+                elif combine == 'min':
+                    eval_preds[j] = np.minimum(eval_preds[j], row.preds)
+                elif combine == 'avg':
+                    eval_preds[j] = eval_preds[j] + row.preds
+                else:
+                    raise NotImplementedError()
+                
+                
     labels = np.zeros((len(test_df), len(terms)), dtype=np.float32)
     eval_preds = np.stack(eval_preds).reshape(-1, len(terms))
-    eval_preds /= len(top_models) # taking mean
-    print(np.sum((eval_preds > 1).astype(np.int32)))
+    if combine == 'avg':
+        eval_preds /= len(top_models) # taking mean
     for i, row in enumerate(test_df.itertuples()):
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
                 labels[i, terms_dict[go_id]] = 1
+
+    with open(f'data/{ont}/preds.tsv', 'w') as f:
+        for i, row in enumerate(test_df.itertuples()):
+            for j, go_id in enumerate(terms):
+                if eval_preds[i][j] >= 0.1:
+                    f.write(
+                        f'{row.accessions}\t{row.proteins}\t{go_id}\t{eval_preds[i][j]}\n')
+    return
+
 
     total_n = 0
     total_sum = 0
@@ -106,7 +128,10 @@ def main(data_root, model_name, ont):
     go_set.remove(FUNC_DICT[ont])
     labels = test_df['prop_annotations'].values
     labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), labels))
-    
+    spec_labels = test_df['exp_annotations'].values
+    spec_labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), spec_labels))
+    fmax_spec_match = 0
+        
     for t in range(0, 101):
         threshold = t / 100.0
         preds = []
@@ -128,6 +153,12 @@ def main(data_root, model_name, ont):
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
         fscore, prec, rec, s, ru, mi, fps, fns, avg_ic, wf = evaluate_annotations(go_rels, labels, preds)
+        spec_match = 0
+        for i, row in enumerate(test_df.itertuples()):
+            if len(spec_labels[i].intersection(preds[i])) > 0:
+                print(row.accessions)
+            
+            spec_match += len(spec_labels[i].intersection(preds[i]))
         print(f'AVG IC {avg_ic:.3f}')
         precisions.append(prec)
         recalls.append(rec)
@@ -136,13 +167,14 @@ def main(data_root, model_name, ont):
             fmax = fscore
             tmax = threshold
             avgic = avg_ic
+            fmax_spec_match = spec_match
         if wfmax < wf:
             wfmax = wf
             wtmax = threshold
         if smin > s:
             smin = s
     print(ont)
-    print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}')
+    print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
     precisions = np.array(precisions)
     recalls = np.array(recalls)
@@ -153,9 +185,7 @@ def main(data_root, model_name, ont):
     print(f'AUPR: {aupr:0.3f}')
     print(f'AVGIC: {avgic:0.3f}')
 
-    df = pd.DataFrame({'precisions': precisions, 'recalls': recalls})
-    df.to_pickle(f'{data_root}/{ont}/pr_deepgo2_falcon.pkl')
-
+    
 def compute_roc(labels, preds):
     # Compute ROC curve and ROC area for each class
     fpr, tpr, _ = roc_curve(labels.flatten(), preds.flatten())
@@ -229,16 +259,16 @@ def evaluate_annotations(go, real_annots, pred_annots):
     return f, p, r, s, ru, mi, fps, fns, avg_ic, wf
 
 
-def get_top_models(ont, model):
+def get_top_models(ont, model, n_models):
     valid_losses = []
     for ind in range(10):
-        with open(f'data/{ont}/{model}_{ind}.pf') as f:
+        with open(f'data/{ont}/valid_{model}_{ind}.pf') as f:
             lines = f.readlines()
             it = lines[-1].strip().split(', ')[0].split(' - ')
             loss = float(it[-1])
             valid_losses.append((ind, loss))
     valid_losses = sorted(valid_losses, key=lambda x: x[1])
-    valid_losses = valid_losses[:5]
+    valid_losses = valid_losses[:n_models]
     result = [m_id for m_id, loss in valid_losses]
     print(valid_losses)
     return set(result)

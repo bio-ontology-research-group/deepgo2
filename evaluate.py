@@ -84,7 +84,9 @@ def main(data_root, ont, model, combine):
     go_set.remove(FUNC_DICT[ont])
     labels = test_df['prop_annotations'].values
     labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), labels))
-    
+    spec_labels = test_df['exp_annotations'].values
+    spec_labels = list(map(lambda x: set(filter(lambda y: y in go_set, x)), spec_labels))
+    fmax_spec_match = 0
     for t in range(0, 101):
         threshold = t / 100.0
         preds = []
@@ -106,6 +108,9 @@ def main(data_root, ont, model, combine):
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
         fscore, prec, rec, s, ru, mi, fps, fns, avg_ic, wf = evaluate_annotations(go_rels, labels, preds)
+        spec_match = 0
+        for i, row in enumerate(test_df.itertuples()):
+            spec_match += len(spec_labels[i].intersection(preds[i]))
         print(f'AVG IC {avg_ic:.3f}')
         precisions.append(prec)
         recalls.append(rec)
@@ -114,6 +119,7 @@ def main(data_root, ont, model, combine):
             fmax = fscore
             tmax = threshold
             avgic = avg_ic
+            fmax_spec_match = spec_match
         if wfmax < wf:
             wfmax = wf
             wtmax = threshold
@@ -122,7 +128,7 @@ def main(data_root, ont, model, combine):
     if combine:
         model += '_diam'
     print(model, ont)
-    print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}')
+    print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
     precisions = np.array(precisions)
     recalls = np.array(recalls)

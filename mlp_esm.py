@@ -181,7 +181,7 @@ class Residual(nn.Module):
         
 class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0, activation=nn.ReLU):
+    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.3, activation=nn.ReLU):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation()
@@ -206,7 +206,7 @@ class DGPROModel(nn.Module):
         net = []
         for hidden_dim in nodes:
             net.append(MLPBlock(input_length, hidden_dim))
-            net.append(MLPBlock(hidden_dim, hidden_dim))
+            net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
             input_length = hidden_dim
         net.append(nn.Linear(input_length, nb_gos))
         net.append(nn.Sigmoid())

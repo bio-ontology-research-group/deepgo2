@@ -55,6 +55,7 @@ class Ontology(object):
         self.ont = self.load(filename, with_rels)
         self.ic = None
         self.ic_norm = 0.0
+        self.ancestors = {}
 
     def has_term(self, term_id):
         return term_id in self.ont
@@ -152,6 +153,8 @@ class Ontology(object):
     def get_anchestors(self, term_id):
         if term_id not in self.ont:
             return set()
+        if term_id in self.ancestors:
+            return self.ancestors[term_id]
         term_set = set()
         q = deque()
         q.append(term_id)
@@ -162,6 +165,7 @@ class Ontology(object):
                 for parent_id in self.ont[t_id]['is_a']:
                     if parent_id in self.ont:
                         q.append(parent_id)
+        self.ancestors[term_id] = term_set
         return term_set
 
     def get_prop_terms(self, terms):

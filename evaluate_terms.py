@@ -7,7 +7,6 @@ import gzip
 import os
 
 from collections import Counter
-from aminoacids import MAXLEN, to_ngrams
 import logging
 
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
@@ -15,10 +14,6 @@ from utils import Ontology, MOLECULAR_FUNCTION, CELLULAR_COMPONENT, BIOLOGICAL_P
 
 logging.basicConfig(level=logging.INFO)
 
-eval_terms = {
-    'mf': set(['GO:0001227', 'GO:0001228', 'GO:0003735', 'GO:0004867', 'GO:0005096']),
-    'bp': set(['GO:0000381', 'GO:0032729', 'GO:0032755', 'GO:0032760', 'GO:0046330', 'GO:0051897', 'GO:0120162']),
-    'cc': set(['GO:0005762', 'GO:0022625', 'GO:0042788', 'GO:1904813'])}
 
 @ck.command()
 @ck.option(
@@ -28,39 +23,43 @@ eval_terms = {
     '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
-    '--model', '-m', default='mlp_blast',
+    '--model', '-m', default='mlp',
     help='Prediction model')
 @ck.option(
     '--combine', '-c', is_flag=True,
     help='Prediction model')
 def main(data_root, ont, model, combine):
-    # Load interpro data
+    train_data_file = f'{data_root}/{ont}/train_data.pkl'
+    valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
     test_data_file = f'{data_root}/{ont}/predictions_{model}.pkl'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    go = Ontology(f'{data_root}/go.obo')
-    go_set = go.get_term_set('GO:0005488')
-    
-    df = pd.read_pickle(test_data_file)
-
+    go_rels = Ontology(f'{data_root}/go.obo', with_rels=True)
     terms_df = pd.read_pickle(terms_file)
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
 
-    preds = np.empty((len(df), len(terms)), dtype=np.float32)
-    labels = np.zeros((len(df), len(terms)), dtype=np.float32)
+    train_df = pd.read_pickle(train_data_file)
+    valid_df = pd.read_pickle(valid_data_file)
+    train_df = pd.concat([train_df, valid_df])
+    test_df = pd.read_pickle(test_data_file)
+    
+    annotations = train_df['prop_annotations'].values
+    annotations = list(map(lambda x: set(x), annotations))
+    test_annotations = test_df['prop_annotations'].values
+    test_annotations = list(map(lambda x: set(x), test_annotations))
+    go_rels.calculate_ic(annotations + test_annotations)
 
-    alpha = 0.5
-    annots = Counter()
-    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
-    for i, row in enumerate(train_df.itertuples()):
-        annots.update(row.prop_annotations)
-    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    for i, row in enumerate(valid_df.itertuples()):
-        annots.update(row.prop_annotations)
+    # Print IC values of terms
+    ics = {}
+    for term in terms:
+        ics[term] = go_rels.get_ic(term)
+
+
+    preds = np.empty((len(test_df), len(terms)), dtype=np.float32)
+    labels = np.zeros((len(test_df), len(terms)), dtype=np.float32)
         
-    for i, row in enumerate(df.itertuples()):
+    for i, row in enumerate(test_df.itertuples()):
         preds[i, :] = row.preds
-        annots.update(row.prop_annotations)
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
                 labels[i, terms_dict[go_id]] = 1
@@ -70,10 +69,10 @@ def main(data_root, ont, model, combine):
     aucs = []
     anns = []
     for go_id, i in terms_dict.items():
-        if go_id not in go_set:
+        if ics[go_id] < 0.5:
             continue
         pos_n = np.sum(labels[:, i])
-        if pos_n > 0 and pos_n < len(df):
+        if pos_n > 0 and pos_n < len(test_df):
             total_n += 1
             roc_auc, fpr, tpr = compute_roc(labels[:, i], preds[:, i])
             print(go_id, roc_auc)

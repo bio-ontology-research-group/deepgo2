@@ -41,7 +41,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/dgg.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_dgg.pkl'
+    out_file = f'{data_root}/{ont}/predictions_nextprot_dgg.pkl'
 
     go = Ontology(go_file, with_rels=True)
 
@@ -254,12 +254,12 @@ def load_data(data_root, ont):
     iprs = ipr_df['interpros'].values
     iprs_dict = {v:k for k, v in enumerate(iprs)}
 
-    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
-    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
+    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data_int.pkl')
+    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data_int.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi.bin')
+    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi_nextprot.bin')
 
     data, labels = get_data(df, iprs_dict, terms_dict)
     graph = graphs[0]

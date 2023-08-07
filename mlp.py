@@ -41,7 +41,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/mlp.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_mlp.pkl'
+    out_file = f'{data_root}/{ont}/predictions_nextprot_mlp.pkl'
 
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
@@ -228,7 +228,7 @@ def load_data(data_root, ont):
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     train_data = get_data(train_df, iprs_dict, terms_dict)
     valid_data = get_data(valid_df, iprs_dict, terms_dict)

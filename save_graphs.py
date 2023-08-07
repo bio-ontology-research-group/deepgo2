@@ -6,9 +6,7 @@ import pandas as pd
 import gzip
 import logging
 import torch as th
-from aminoacids import MAXLEN
-import torch
-import os
+
 
 #DGL imports
 import dgl
@@ -16,52 +14,99 @@ import dgl
 
 @ck.command()
 def main():
-    df = pd.read_pickle('data/swissprot_exp.pkl')
-    mask = torch.zeros((len(df), MAXLEN, MAXLEN), dtype=torch.uint8)
-    with ck.progressbar(length=len(df), show_pos=True) as bar:
-        for i, row in enumerate(df.itertuples()):
-            seq_len = min(MAXLEN, len(row.sequences))
-            graph_path = 'data/graphs/' + row.proteins + '.bin'
-            if os.path.exists(graph_path):
-                gs, _ = dgl.load_graphs(graph_path)
-                g = gs[0]
-                nnodes = g.num_nodes()
-                mask[i, :nnodes, :nnodes] = g.adj().to_dense()
-            else:
-                mask[i, :seq_len, :seq_len] = 1
-            bar.update(1)
-    mask = mask.to_sparse()
-    torch.save(mask, 'data/mask.pt')
-    
-    
-def save_ppi():
 
-    dgl.save_graphs('data/go.bin', graph, {'etypes': etypes})
-    df = pd.read_pickle('data/swissprot_interactions.pkl')
-    proteins = df['proteins']
-    prot_idx = {v: k for k, v in enumerate(proteins)}
-    src = []
-    dst = []
-    for i, row in enumerate(df.itertuples()):
-        p_id = prot_idx[row.proteins]
-        for p2_id in row.interactions:
-            if p2_id in prot_idx:
-                p2_id = prot_idx[p2_id]
-                src.append(p_id)
-                dst.append(p2_id)
+    for ont in ['mf', 'bp', 'cc']:
+        train_df = pd.read_pickle(f'data/{ont}/train_data_int.pkl')
+        proteins = train_df['proteins']
+        prot_idx = {v: k for k, v in enumerate(proteins)}
+        src = []
+        dst = []
+        edge_types = []
+        rels = {}
+        for i, row in enumerate(train_df.itertuples()):
+            p_id = prot_idx[row.proteins]
+            for rel, p2_id in row.interactions:
+                if rel not in rels:
+                    rels[rel] = len(rels)
+                if p2_id in prot_idx:
+                    p2_id = prot_idx[p2_id]
+                    src.append(p_id)
+                    dst.append(p2_id)
+                    edge_types.append(rels[rel])
+        
+        print(len(src), len(proteins))
+        
+        train_n = len(proteins)
+        valid_df = pd.read_pickle(f'data/{ont}/valid_data_int.pkl')
+        valid_proteins = valid_df['proteins']
+        for i, p_id in enumerate(valid_proteins):
+            prot_idx[p_id] = train_n + i
 
-    graph = dgl.graph((src, dst), num_nodes=len(proteins))
-    graph = dgl.add_self_loop(graph)
-    dgl.save_graphs('data/ppi.bin', graph)
+        valid_proteins = set(valid_proteins)
+        valid_n = len(valid_proteins)
 
-    
+        for i, row in enumerate(train_df.itertuples()):
+            p_id = prot_idx[row.proteins]
+            for rel, p2_id in row.interactions:
+                if p2_id in valid_proteins:
+                    p2_id = prot_idx[p2_id]
+                    src.append(p_id)
+                    dst.append(p2_id)
+                    edge_types.append(rels[rel])
+
+        for i, row in enumerate(valid_df.itertuples()):
+            p_id = prot_idx[row.proteins]
+            for rel, p2_id in row.interactions:
+                if rel not in rels:
+                    rels[rel] = len(rels)
+                if p2_id in prot_idx:
+                    p2_id = prot_idx[p2_id]
+                    src.append(p_id)
+                    dst.append(p2_id)
+                    edge_types.append(rels[rel])
 
 
-def to_go(uri):
-    return uri[1:-1].replace('http://purl.obolibrary.org/obo/GO_', 'GO:')
+        train_df = pd.concat([train_df, valid_df])
 
-def to_rel(uri):
-    return uri[len('ObjectSomeValuesFrom(<http://purl.obolibrary.org/obo/'):-1]
+        test_df = pd.read_pickle(f'data/{ont}/nextprot_data.pkl')
+        test_proteins = test_df['proteins']
+        for i, p_id in enumerate(test_proteins):
+            prot_idx[p_id] = train_n + valid_n + i
+
+        test_proteins = set(test_proteins)
+        test_n = len(test_proteins)
+        
+        for i, row in enumerate(train_df.itertuples()):
+            p_id = prot_idx[row.proteins]
+            for rel, p2_id in row.interactions:
+                if p2_id in test_proteins:
+                    p2_id = prot_idx[p2_id]
+                    src.append(p_id)
+                    dst.append(p2_id)
+                    edge_types.append(rels[rel])
+
+        for i, row in enumerate(test_df.itertuples()):
+            p_id = prot_idx[row.proteins]
+            for rel, p2_id in row.interactions:
+                if rel not in rels:
+                    rels[rel] = len(rels)
+                if p2_id in prot_idx:
+                    p2_id = prot_idx[p2_id]
+                    src.append(p_id)
+                    dst.append(p2_id)
+                    edge_types.append(rels[rel])
+
+        print(len(prot_idx))
+        graph = dgl.graph((src, dst), num_nodes=len(prot_idx))
+        graph.edata['etypes'] = th.LongTensor(edge_types)
+        graph = dgl.add_self_loop(graph)
+        dgl.save_graphs(
+            f'data/{ont}/ppi_nextprot.bin', graph,
+            {
+                'train_nids': th.LongTensor(np.arange(train_n)),
+                'valid_nids': th.LongTensor(np.arange(train_n, train_n + valid_n)),
+                'test_nids': th.LongTensor(np.arange(train_n + valid_n, train_n + valid_n + test_n))
+            })
 
 if __name__ == '__main__':
     main()

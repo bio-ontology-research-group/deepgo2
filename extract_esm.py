@@ -7,9 +7,16 @@
 import torch
 from pathlib import Path
 from esm import Alphabet, FastaBatchedDataset, ProteinBertModel, pretrained
+import os
 
 def extract_esm(fasta_file, output_dir=Path('data/esm/'), model_location='esm2_t36_3B_UR50D',
                 truncation_seq_length=1022, toks_per_batch=4096):
+    if os.path.exists(fasta_file + '.pt'):
+        obj = torch.load(fasta_file + '.pt')
+        data = obj['data']
+        proteins = obj['proteins']
+        return proteins, data
+    
     model, alphabet = pretrained.load_model_and_alphabet(model_location)
     model.eval()
     if torch.cuda.is_available():
@@ -57,4 +64,5 @@ def extract_esm(fasta_file, output_dir=Path('data/esm/'), model_location='esm2_t
                 proteins.append(label)
                 data.append(result["mean_representations"][36])
     data = torch.stack(data).reshape(-1, 2560)
+    torch.save({'data': data, 'proteins': proteins}, fasta_file + '.pt')
     return proteins, data

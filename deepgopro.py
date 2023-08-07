@@ -12,7 +12,7 @@ from torch.utils.data import DataLoader, IterableDataset, TensorDataset
 from itertools import cycle
 import math
 from aminoacids import to_onehot, MAXLEN
-from dgl.nn import GraphConv, GATConv
+from dgl.nn import GraphConv
 import dgl
 from torch_utils import FastTensorDataLoader
 import csv
@@ -24,7 +24,7 @@ from torch.optim.lr_scheduler import MultiStepLR
     '--data-root', '-dr', default='data',
     help='Prediction model')
 @ck.option(
-    '--ont', '-ont', default='bp',
+    '--ont', '-ont', default='mf',
     help='Prediction model')
 @ck.option(
     '--batch-size', '-bs', default=37,
@@ -39,58 +39,34 @@ from torch.optim.lr_scheduler import MultiStepLR
     help='Device')
 def main(data_root, ont, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
-    model_file = f'{data_root}/{ont}/deepgo2bpcc.th'
+    model_file = f'{data_root}/{ont}/mlp.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgo2bpcc.pkl'
+    out_file = f'{data_root}/{ont}/predictions_mlp.pkl'
 
     go = Ontology(go_file, with_rels=True)
-
     loss_func = nn.BCELoss()
-    mfs_dict, terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df = load_data(data_root, ont)
+    iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont)
     n_terms = len(terms_dict)
-    n_mfs = len(mfs_dict)
+    n_iprs = len(iprs_dict)
 
+    net = DGPROModel(n_iprs, n_terms, device).to(device)
     
-    valid_labels = labels[valid_nids].numpy()
-    test_labels = labels[test_nids].numpy()
-
-    labels = labels.to(device)
-
-    print(valid_labels.shape)
+    train_features, train_labels = train_data
+    valid_features, valid_labels = valid_data
+    test_features, test_labels = test_data
     
-    graph = graph.to(device)
+    train_loader = FastTensorDataLoader(
+        *train_data, batch_size=batch_size, shuffle=True)
+    valid_loader = FastTensorDataLoader(
+        *valid_data, batch_size=batch_size, shuffle=False)
+    test_loader = FastTensorDataLoader(
+        *test_data, batch_size=batch_size, shuffle=False)
 
-    train_nids = train_nids.to(device)
-    valid_nids = valid_nids.to(device)
-    test_nids = test_nids.to(device)
-
-    net = DeepGO2Model(n_mfs, n_terms, device).to(device)
-
-    sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
-    train_dataloader = dgl.dataloading.DataLoader(
-        graph, train_nids, sampler,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        num_workers=0)
-
-    valid_dataloader = dgl.dataloading.DataLoader(
-        graph, valid_nids, sampler,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        num_workers=0)
-
-    test_dataloader = dgl.dataloading.DataLoader(
-        graph, test_nids, sampler,
-        batch_size=batch_size,
-        shuffle=False,
-        drop_last=False,
-        num_workers=0)
-    
+    valid_labels = valid_labels.detach().cpu().numpy()
+    test_labels = test_labels.detach().cpu().numpy()
     
     optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
-    scheduler = MultiStepLR(optimizer, milestones=[5, 10,], gamma=0.1)
+    scheduler = MultiStepLR(optimizer, milestones=[1, 3,], gamma=0.1)
 
     best_loss = 10000.0
     if not load:
@@ -100,12 +76,13 @@ def main(data_root, ont, batch_size, epochs, load, device):
         for epoch in range(epochs):
             net.train()
             train_loss = 0
-            train_steps = int(math.ceil(len(train_nids) / batch_size))
+            train_steps = int(math.ceil(len(train_labels) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
-                for input_nodes, output_nodes, blocks in train_dataloader:
+                for batch_features, batch_labels in train_loader:
                     bar.update(1)
-                    logits = net(input_nodes, output_nodes, blocks)
-                    batch_labels = labels[output_nodes]
+                    batch_features = batch_features.to(device)
+                    batch_labels = batch_labels.to(device)
+                    logits = net(batch_features)
                     loss = F.binary_cross_entropy(logits, batch_labels)
                     optimizer.zero_grad()
                     loss.backward()
@@ -117,14 +94,15 @@ def main(data_root, ont, batch_size, epochs, load, device):
             print('Validation')
             net.eval()
             with th.no_grad():
-                valid_steps = int(math.ceil(len(valid_nids) / batch_size))
+                valid_steps = int(math.ceil(len(valid_labels) / batch_size))
                 valid_loss = 0
                 preds = []
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
-                    for input_nodes, output_nodes, blocks in valid_dataloader:
+                    for batch_features, batch_labels in valid_loader:
                         bar.update(1)
-                        logits = net(input_nodes, output_nodes, blocks)
-                        batch_labels = labels[output_nodes]
+                        batch_features = batch_features.to(device)
+                        batch_labels = batch_labels.to(device)
+                        logits = net(batch_features)
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
                         preds = np.append(preds, logits.detach().cpu().numpy())
@@ -146,14 +124,15 @@ def main(data_root, ont, batch_size, epochs, load, device):
     net.load_state_dict(th.load(model_file))
     net.eval()
     with th.no_grad():
-        test_steps = int(math.ceil(len(test_nids) / batch_size))
+        test_steps = int(math.ceil(len(test_labels) / batch_size))
         test_loss = 0
         preds = []
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
-            for input_nodes, output_nodes, blocks in test_dataloader:
+            for batch_features, batch_labels in test_loader:
                 bar.update(1)
-                logits = net(input_nodes, output_nodes, blocks)
-                batch_labels = labels[output_nodes]
+                batch_features = batch_features.to(device)
+                batch_labels = batch_labels.to(device)
+                logits = net(batch_features)
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
@@ -202,7 +181,7 @@ class Residual(nn.Module):
         
 class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=False, dropout=0.5, activation=nn.ReLU):
+    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.3, activation=nn.ReLU):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation()
@@ -218,61 +197,52 @@ class MLPBlock(nn.Module):
         return x
 
 
-class DeepGO2Model(nn.Module):
+class DGPROModel(nn.Module):
 
-    def __init__(self, nb_iprs, nb_gos, device, hidden_dim=1024):
+    def __init__(self, nb_iprs, nb_gos, device, nodes=[1024,]):
         super().__init__()
         self.nb_gos = nb_gos
-        self.net1 = MLPBlock(nb_iprs, hidden_dim)
-        self.conv1 = GATConv(hidden_dim, hidden_dim, num_heads=1)
-        input_length = hidden_dim
-        self.net2 = nn.Sequential(
-            nn.Linear(hidden_dim, nb_gos),
-            nn.Sigmoid())
+        input_length = nb_iprs
+        net = []
+        for hidden_dim in nodes:
+            net.append(MLPBlock(input_length, hidden_dim))
+            net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
+            input_length = hidden_dim
+        net.append(nn.Linear(input_length, nb_gos))
+        net.append(nn.Sigmoid())
+        self.net = nn.Sequential(*net)
+        
+    def forward(self, features):
+        return self.net(features)
 
-        
-    def forward(self, input_nodes, output_nodes, blocks, residual=True):
-        g1 = blocks[0]
-        # g2 = blocks[1]
-        features = g1.ndata['feat']['_N']
-        x = self.net1(features)
-        x = self.conv1(g1, x).squeeze(dim=1)
-        # x = self.conv2(g2, x)
-        logits = self.net2(x)
-        return logits
-        
-    
     
 def load_data(data_root, ont):
     terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
-    mf_df = pd.read_pickle(f'{data_root}/mf/terms.pkl')
-    mfs = mf_df['gos'].values
-    mfs_dict = {v:k for k, v in enumerate(mfs)}
+    
+    ipr_df = pd.read_pickle(f'{data_root}/{ont}/interpros.pkl')
+    iprs = ipr_df['interpros'].values
+    iprs_dict = {v:k for k, v in enumerate(iprs)}
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
     test_df = pd.read_pickle(f'{data_root}/{ont}/test_data.pkl')
 
-    df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi.bin')
+    train_data = get_data(train_df, iprs_dict, terms_dict)
+    valid_data = get_data(valid_df, iprs_dict, terms_dict)
+    test_data = get_data(test_df, iprs_dict, terms_dict)
 
-    data, labels = get_data(df, mfs_dict, terms_dict)
-    graph = graphs[0]
-    graph.ndata['feat'] = data
-    graph.ndata['labels'] = labels
-    train_nids, valid_nids, test_nids = nids['train_nids'], nids['valid_nids'], nids['test_nids']
-    return mfs_dict, terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
+    return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, mfs_dict, terms_dict):
-    data = th.zeros((len(df), len(mfs_dict)), dtype=th.float32)
+def get_data(df, iprs_dict, terms_dict):
+    data = th.zeros((len(df), len(iprs_dict)), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
-        for go_id in row.prop_annotations:
-            if go_id in mfs_dict:
-                data[i, mfs_dict[go_id]] = 1
+        for ipr in row.interpros:
+            if ipr in iprs_dict:
+                data[i, iprs_dict[ipr]] = 1
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
                 g_id = terms_dict[go_id]

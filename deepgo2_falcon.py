@@ -40,7 +40,7 @@ owlapi = OWLAPIAdapter()
     '--batch-size', '-bs', default=64,
     help='Batch size for training')
 @ck.option(
-    '--epochs', '-ep', default=128,
+    '--epochs', '-ep', default=512,
     help='Training epochs')
 @ck.option(
     '--model-name', '-m', default='deepgo2_falcon', help='Model name')
@@ -199,7 +199,7 @@ class DGFALCONModule(FALCONModule):
     def _mem(self, c_emb, e_emb):
         # emb = th.cat([c_emb, e_emb], dim=-1)
         # return self.mem_net(emb)
-        return th.sigmoid(th.sum(c_emb * e_emb, dim=-1, keepdims=True))
+        return th.sigmoid(th.linalg.norm(c_emb + e_emb, dim=-1, keepdims=True))
 
     def function_predict(self, features, terms_index):
         x = self.project(features)
@@ -255,6 +255,7 @@ class DGFalconModel(EmbeddingALCModel):
         ).to(device)
         
     def train(self, train_data, valid_data, terms_index, batch_size=64):
+        # self.model.load_state_dict(th.load(self.model_filepath))
         optimizer = torch.optim.Adam(self.model.parameters(), lr=0.003)
         best_loss = float('inf')
 
