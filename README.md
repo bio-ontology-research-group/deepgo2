@@ -6,12 +6,14 @@ neuro-symbolic model that exploits GO axioms and performs protein
 function prediction as a form of approximate semantic entailment.
 
 This repository contains script which were used to build and train the
-DeepGOZero model together with the scripts for evaluating the model's
+DeepGO-SE model together with the scripts for evaluating the model's
 performance.
 
 ## Dependencies
-* The code was developed and tested using python 3.9.
-* To install python dependencies run:
+* The code was developed and tested using python 3.10.
+* Install PyTorch: `pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2`
+* Install DGL: `pip install  dgl -f https://data.dgl.ai/wheels/cu117/repo.html`
+* Install other requirements:
   `pip install -r requirements.txt`
 
 

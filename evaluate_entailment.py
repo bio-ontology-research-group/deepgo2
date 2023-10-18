@@ -14,7 +14,6 @@ from scipy.spatial import distance
 from scipy import sparse
 import math
 from utils import FUNC_DICT, Ontology, NAMESPACES
-from matplotlib import pyplot as plt
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 

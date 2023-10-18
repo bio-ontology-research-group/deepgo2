@@ -13,8 +13,7 @@ from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 from scipy.spatial import distance
 from scipy import sparse
 import math
-from utils import FUNC_DICT, Ontology, NAMESPACES
-from matplotlib import pyplot as plt
+from utils import FUNC_DICT, Ontology, NAMESPACES, EXP_CODES
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -33,12 +32,19 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 @ck.option(
     '--combine', '-c', is_flag=True,
     help='Prediction model')
-def main(data_root, ont, model, combine):
+@ck.option(
+    '--alpha', '-a', default=0.50,
+    help='Combining weight')
+@ck.option(
+    '--num-preds', '-np', default=50,
+    help='Combining weight')
+def main(data_root, ont, model, combine, alpha, num_preds):
     train_data_file = f'{data_root}/{ont}/train_data.pkl'
     valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
     test_data_file = f'{data_root}/{ont}/predictions_{model}.pkl'
+    # diam_data_file = f'{data_root}/{ont}/test_data_diam.pkl'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    go_rels = Ontology(f'{data_root}/go.obo', with_rels=True)
+    go_rels = Ontology(f'data/go.obo', with_rels=True)
     terms_df = pd.read_pickle(terms_file)
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
@@ -47,6 +53,7 @@ def main(data_root, ont, model, combine):
     valid_df = pd.read_pickle(valid_data_file)
     train_df = pd.concat([train_df, valid_df])
     test_df = pd.read_pickle(test_data_file)
+    # diam_df = pd.read_pickle(diam_data_file)
     
     annotations = train_df['prop_annotations'].values
     annotations = list(map(lambda x: set(x), annotations))
@@ -56,18 +63,39 @@ def main(data_root, ont, model, combine):
 
     # Print IC values of terms
     ics = {}
-    for term in terms:
+    for i, term in enumerate(terms):
         ics[term] = go_rels.get_ic(term)
-
+    
     # Combine scores for diamond and deepgo
-    alpha = 0.5
     eval_preds = []
+    
     for i, row in enumerate(test_df.itertuples()):
-        if combine:
-            preds = row.blast_preds * alpha + row.preds * (1 - alpha)
-        else:
-            preds = row.preds
+        # diam_preds = np.zeros((len(terms),), dtype=np.float32)
+        # for go_id, score in diam_df.iloc[i]['diam_preds'].items():
+        #     if go_id in terms_dict:
+        #         diam_preds[terms_dict[go_id]] = score
+        preds = row.preds # diam_preds * alpha + row.preds * (1 - alpha)
         eval_preds.append(preds)
+
+    labels = np.zeros((len(test_df), len(terms)), dtype=np.float32)
+    eval_preds = np.concatenate(eval_preds).reshape(-1, len(terms))
+
+    for i, row in enumerate(test_df.itertuples()):
+        for go_id in row.prop_annotations:
+            if go_id in terms_dict:
+                labels[i, terms_dict[go_id]] = 1
+
+    total_n = 0
+    total_sum = 0
+    for go_id, i in terms_dict.items():
+        pos_n = np.sum(labels[:, i])
+        if pos_n > 0 and pos_n < len(test_df):
+            total_n += 1
+            roc_auc  = compute_roc(labels[:, i], eval_preds[:, i])
+            total_sum += roc_auc
+
+    avg_auc = total_sum / total_n
+    
     print('Computing Fmax')
     fmax = 0.0
     tmax = 0.0
@@ -79,7 +107,6 @@ def main(data_root, ont, model, combine):
     smin = 1000000.0
     rus = []
     mis = []
-    ont2 = 'mf'
     go_set = go_rels.get_namespace_terms(NAMESPACES[ont])
     go_set.remove(FUNC_DICT[ont])
     labels = test_df['prop_annotations'].values
@@ -89,21 +116,20 @@ def main(data_root, ont, model, combine):
     fmax_spec_match = 0
     for t in range(0, 101):
         threshold = t / 100.0
-        preds = []
-        for i, row in enumerate(test_df.itertuples()):
+        preds = [set() for _ in range(len(test_df))]
+        for i in range(len(test_df)):
             annots = set()
-            for j, go_id in enumerate(terms):
-                if eval_preds[i][j] >= threshold:
-                    annots.add(go_id)
-
+            above_threshold = np.argwhere(eval_preds[i] >= threshold).flatten()
+            for j in above_threshold:
+                annots.add(terms[j])
+        
             if t == 0:
-                preds.append(annots)
+                preds[i] = annots
                 continue
             # new_annots = set()
             # for go_id in annots:
             #     new_annots |= go_rels.get_anchestors(go_id)
-            preds.append(annots)
-
+            preds[i] = annots
             
         # Filter classes
         preds = list(map(lambda x: set(filter(lambda y: y in go_set, x)), preds))
@@ -111,10 +137,10 @@ def main(data_root, ont, model, combine):
         spec_match = 0
         for i, row in enumerate(test_df.itertuples()):
             spec_match += len(spec_labels[i].intersection(preds[i]))
-        print(f'AVG IC {avg_ic:.3f}')
+        # print(f'AVG IC {avg_ic:.3f}')
         precisions.append(prec)
         recalls.append(rec)
-        print(f'Fscore: {fscore}, Precision: {prec}, Recall: {rec} S: {s}, RU: {ru}, MI: {mi} threshold: {threshold}, WFmax: {wf}')
+        # print(f'Fscore: {fscore}, Precision: {prec}, Recall: {rec} S: {s}, RU: {ru}, MI: {mi} threshold: {threshold}, WFmax: {wf}')
         if fmax < fscore:
             fmax = fscore
             tmax = threshold
@@ -130,6 +156,7 @@ def main(data_root, ont, model, combine):
     print(model, ont)
     print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
+    print(f'AUC: {avg_auc:0.3f}')
     precisions = np.array(precisions)
     recalls = np.array(recalls)
     sorted_index = np.argsort(recalls)
@@ -139,17 +166,6 @@ def main(data_root, ont, model, combine):
     print(f'AUPR: {aupr:0.3f}')
     print(f'AVGIC: {avgic:0.3f}')
 
-    plt.figure()
-    lw = 2
-    plt.plot(recalls, precisions, color='darkorange',
-             lw=lw, label=f'AUPR curve (area = {aupr:0.2f})')
-    plt.xlim([0.0, 1.0])
-    plt.ylim([0.0, 1.05])
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title('Area Under the Precision-Recall curve')
-    plt.legend(loc="lower right")
-    plt.savefig(f'{data_root}/{ont}/aupr_{model}.pdf')
     df = pd.DataFrame({'precisions': precisions, 'recalls': recalls})
     df.to_pickle(f'{data_root}/{ont}/pr_{model}.pkl')
 
@@ -208,7 +224,8 @@ def evaluate_annotations(go, real_annots, pred_annots):
             p_total += 1
             precision = tpn / (1.0 * (tpn + fpn))
             p += precision
-            wp += tpic / (tpic + fpic)
+            if tpic + fpic > 0:
+                wp += tpic / (tpic + fpic)
     avg_ic = (avg_ic + mi) / total
     ru /= total
     mi /= total
