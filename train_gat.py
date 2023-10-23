@@ -6,7 +6,6 @@ import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from torch import optim
-from torch.optim.lr_scheduler import MultiStepLR
 from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader, IterableDataset, TensorDataset
@@ -16,6 +15,8 @@ from aminoacids import to_onehot, MAXLEN
 from dgl.nn import GraphConv, GATConv
 import dgl
 from torch_utils import FastTensorDataLoader
+import csv
+from torch.optim.lr_scheduler import MultiStepLR
 
 
 @ck.command()
@@ -24,6 +25,9 @@ from torch_utils import FastTensorDataLoader
     help='Prediction model')
 @ck.option(
     '--ont', '-ont', default='mf',
+    help='Prediction model')
+@ck.option(
+    '--model-name', '-m', default='deepgozero_gat',
     help='Prediction model')
 @ck.option(
     '--batch-size', '-bs', default=37,
@@ -36,15 +40,16 @@ from torch_utils import FastTensorDataLoader
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, load, device):
-    go_file = f'{data_root}/go.norm'
-    model_file = f'{data_root}/{ont}/deepgozero2.th'
+def main(data_root, ont, model_name, batch_size, epochs, load, device):
+    go_file = f'{data_root}/go.obo'
+    model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_deepgozero2.pkl'
+    out_file = f'{data_root}/{ont}/nextprot_predictions_{model_name}.pkl'
 
-    go = Ontology(f'{data_root}/go.obo', with_rels=True)
+    go = Ontology(go_file, with_rels=True)
+
     loss_func = nn.BCELoss()
-    terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df = load_data(data_root, ont, terms_file)
+    terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df = load_data(data_root, ont)
     n_terms = len(terms_dict)
     
     
@@ -60,6 +65,22 @@ def main(data_root, ont, batch_size, epochs, load, device):
     train_nids = train_nids.to(device)
     valid_nids = valid_nids.to(device)
     test_nids = test_nids.to(device)
+
+    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
+        f'{data_root}/go.norm', terms_dict)
+    n_rels = len(relations)
+    n_zeros = len(zero_classes)
+
+    
+    normal_forms = nf1, nf2, nf3, nf4
+    nf1 = th.LongTensor(nf1).to(device)
+    nf2 = th.LongTensor(nf2).to(device)
+    nf3 = th.LongTensor(nf3).to(device)
+    nf4 = th.LongTensor(nf4).to(device)
+    normal_forms = nf1, nf2, nf3, nf4
+
+
+    net = DeepGO2Model(2560, n_terms, n_rels, n_zeros, device).to(device)
 
     sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
     train_dataloader = dgl.dataloading.DataLoader(
@@ -82,47 +103,19 @@ def main(data_root, ont, batch_size, epochs, load, device):
         shuffle=False,
         drop_last=False,
         num_workers=0)
-
-    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
-        go_file, terms_dict)
-    n_rels = len(relations)
-    n_zeros = len(zero_classes)
-
     
-    normal_forms = nf1, nf2, nf3, nf4
-    nf1 = th.LongTensor(nf1).to(device)
-    nf2 = th.LongTensor(nf2).to(device)
-    nf3 = th.LongTensor(nf3).to(device)
-    nf4 = th.LongTensor(nf4).to(device)
-    normal_forms = nf1, nf2, nf3, nf4
-
-    net = DGZeroModel(2560, n_terms, n_zeros, n_rels, device).to(device)
-    print(net)
-    # train_features, train_labels = train_data
-    # valid_features, valid_labels = valid_data
-    # test_features, test_labels = test_data
     
-    # train_loader = FastTensorDataLoader(
-    #     *train_data, batch_size=batch_size, shuffle=True)
-    # valid_loader = FastTensorDataLoader(
-    #     *valid_data, batch_size=batch_size, shuffle=False)
-    # test_loader = FastTensorDataLoader(
-    #     *test_data, batch_size=batch_size, shuffle=False)
-    
-    # valid_labels = valid_labels.detach().cpu().numpy()
-    # test_labels = test_labels.detach().cpu().numpy()
-    
-    optimizer = th.optim.Adam(net.parameters(), lr=0.003)
-    scheduler = MultiStepLR(optimizer, milestones=[2, 5], gamma=0.1)
+    optimizer = th.optim.Adam(net.parameters(), lr=1e-3)
+    scheduler = MultiStepLR(optimizer, milestones=[5, 10,], gamma=0.1)
 
     best_loss = 10000.0
     if not load:
         print('Training the model')
+        log_file = open(f'{data_root}/train_logs.tsv', 'w')
+        logger = csv.writer(log_file, delimiter='\t')
         for epoch in range(epochs):
             net.train()
             train_loss = 0
-            train_elloss = 0
-            lmbda = 0.1
             train_steps = int(math.ceil(len(train_nids) / batch_size))
             with ck.progressbar(length=train_steps, show_pos=True) as bar:
                 for input_nodes, output_nodes, blocks in train_dataloader:
@@ -143,7 +136,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
             print('Validation')
             net.eval()
             with th.no_grad():
-                valid_steps = int(math.ceil(len(valid_labels) / batch_size))
+                valid_steps = int(math.ceil(len(valid_nids) / batch_size))
                 valid_loss = 0
                 preds = []
                 with ck.progressbar(length=valid_steps, show_pos=True) as bar:
@@ -156,9 +149,8 @@ def main(data_root, ont, batch_size, epochs, load, device):
                         preds = np.append(preds, logits.detach().cpu().numpy())
                 valid_loss /= valid_steps
                 roc_auc = compute_roc(valid_labels, preds)
-                print(f'Epoch {epoch}: Loss - {train_loss}, EL Loss: {train_elloss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
-
-            print('EL Loss', train_elloss)
+                print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
+                logger.writerow([epoch, train_loss, valid_loss, roc_auc])
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
@@ -166,36 +158,50 @@ def main(data_root, ont, batch_size, epochs, load, device):
 
             scheduler.step()
             
+        log_file.close()
 
     # Loading best model
     print('Loading the best model')
     net.load_state_dict(th.load(model_file))
     net.eval()
+
     with th.no_grad():
-        test_steps = int(math.ceil(len(test_labels) / batch_size))
+        valid_steps = int(math.ceil(len(valid_nids) / batch_size))
+        valid_loss = 0
+        preds = []
+        with ck.progressbar(length=valid_steps, show_pos=True) as bar:
+            for input_nodes, output_nodes, blocks in valid_dataloader:
+                bar.update(1)
+                logits = net(input_nodes, output_nodes, blocks)
+                batch_labels = labels[output_nodes]
+                batch_loss = F.binary_cross_entropy(logits, batch_labels)
+                valid_loss += batch_loss.detach().item()
+                preds = np.append(preds, logits.detach().cpu().numpy())
+            valid_loss /= valid_steps
+                
+    with th.no_grad():
+        test_steps = int(math.ceil(len(test_nids) / batch_size))
         test_loss = 0
         preds = []
         with ck.progressbar(length=test_steps, show_pos=True) as bar:
-            with ck.progressbar(length=valid_steps, show_pos=True) as bar:
-                for input_nodes, output_nodes, blocks in test_dataloader:
-                    bar.update(1)
-                    logits = net(input_nodes, output_nodes, blocks)
-                    batch_labels = labels[output_nodes]
-                    batch_loss = F.binary_cross_entropy(logits, batch_labels)
+            for input_nodes, output_nodes, blocks in test_dataloader:
+                bar.update(1)
+                logits = net(input_nodes, output_nodes, blocks)
+                batch_labels = labels[output_nodes]
+                batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
                 preds = np.append(preds, logits.detach().cpu().numpy())
             test_loss /= test_steps
         preds = preds.reshape(-1, n_terms)
         roc_auc = compute_roc(test_labels, preds)
-        print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
-
-        
+    print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, AUC - {roc_auc}')
+    
     preds = list(preds)
     # Propagate scores using ontology structure
-    for i, scores in enumerate(preds):
+    for i in range(len(preds)):
         prop_annots = {}
         for go_id, j in terms_dict.items():
-            score = scores[j]
+            score = preds[i][j]
             for sup_go in go.get_anchestors(go_id):
                 if sup_go in prop_annots:
                     prop_annots[sup_go] = max(prop_annots[sup_go], score)
@@ -203,7 +209,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
                     prop_annots[sup_go] = score
         for go_id, score in prop_annots.items():
             if go_id in terms_dict:
-                scores[terms_dict[go_id]] = score
+                preds[i][terms_dict[go_id]] = score
 
     test_df['preds'] = preds
 
@@ -216,6 +222,7 @@ def compute_roc(labels, preds):
     roc_auc = auc(fpr, tpr)
 
     return roc_auc
+
 
 def load_normal_forms(go_file, terms_dict):
     nf1 = []
@@ -277,7 +284,7 @@ class Residual(nn.Module):
         
 class MLPBlock(nn.Module):
 
-    def __init__(self, in_features, out_features, bias=True, layer_norm=True, dropout=0.1, activation=nn.ReLU):
+    def __init__(self, in_features, out_features, bias=True, layer_norm=False, dropout=0.1, activation=nn.ReLU):
         super().__init__()
         self.linear = nn.Linear(in_features, out_features, bias)
         self.activation = activation()
@@ -293,20 +300,18 @@ class MLPBlock(nn.Module):
         return x
 
 
-class DGZeroModel(nn.Module):
+class DeepGO2Model(nn.Module):
 
-    def __init__(self, input_length, nb_gos, nb_zero_gos, nb_rels, device, hidden_dim=1024, embed_dim=1024, margin=0.1):
+    def __init__(self, input_length, nb_gos, nb_rels, nb_zero_gos, device, hidden_dim=1024, embed_dim=1024, margin=0.1):
         super().__init__()
         self.nb_gos = nb_gos
-        self.nb_zero_gos = nb_zero_gos
-        net = []
-        net.append(MLPBlock(input_length, hidden_dim))
-        net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
-        self.net = nn.Sequential(*net)
+        self.net1 = MLPBlock(input_length, hidden_dim)
+        self.conv1 = GATConv(hidden_dim, hidden_dim, num_heads=1)
+        input_length = hidden_dim
+        self.net2 = nn.Sequential(
+            nn.Linear(hidden_dim, nb_gos),
+            nn.Sigmoid())
 
-        self.conv1 = GraphConv(input_length, hidden_dim)
-        # self.conv2 = GraphConv(hidden_dim, hidden_dim)
-        
         # ELEmbeddings
         self.embed_dim = embed_dim
         self.hasFuncIndex = th.LongTensor([nb_rels]).to(device)
@@ -324,14 +329,15 @@ class DGZeroModel(nn.Module):
         self.all_gos = th.arange(self.nb_gos).to(device)
         self.margin = margin
 
+
         
-    def forward(self, input_nodes, output_nodes, blocks):
+    def forward(self, input_nodes, output_nodes, blocks, residual=True):
         g1 = blocks[0]
         # g2 = blocks[1]
         features = g1.ndata['feat']['_N']
-        # x = self.net(features)
-        x = self.conv1(g1, features)
-        # x = self.conv2(g2, x)
+        x = self.net1(features)
+        x = self.conv1(g1, x).squeeze(dim=1)
+
         go_embed = self.go_embed(self.all_gos)
         hasFunc = self.rel_embed(self.hasFuncIndex)
         hasFuncGO = go_embed + hasFunc
@@ -340,17 +346,7 @@ class DGZeroModel(nn.Module):
         logits = th.sigmoid(x)
         return logits
 
-    def predict_zero(self, features, data):
-        x = self.net(features)
-        go_embed = self.go_embed(data)
-        hasFunc = self.rel_embed(self.hasFuncIndex)
-        hasFuncGO = go_embed + hasFunc
-        go_rad = th.abs(self.go_rad(data).view(1, -1))
-        x = th.matmul(x, hasFuncGO.T) + go_rad
-        logits = th.sigmoid(x)
-        return logits
-
-
+        
     def el_loss(self, go_normal_forms):
         nf1, nf2, nf3, nf4 = go_normal_forms
         nf1_loss = self.nf1_loss(nf1)
@@ -429,20 +425,24 @@ class DGZeroModel(nn.Module):
         dst = th.linalg.norm(c - rSomeD, dim=1, keepdim=True)
         loss = th.mean(th.relu(dst - sr - self.margin))
         return loss
+
     
-    
-def load_data(data_root, ont, terms_file):
-    terms_df = pd.read_pickle(terms_file)
+def load_data(data_root, ont):
+    terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
+    
+    mf_df = pd.read_pickle(f'{data_root}/mf/terms.pkl')
+    mfs = mf_df['gos'].values
+    mfs_dict = {v:k for k, v in enumerate(mfs)}
 
-    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data_int.pkl')
-    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data_int.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/test_data_int.pkl')
+    train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
+    valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
 
     df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi.bin')
+    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi_nextprot.bin')
 
     data, labels = get_data(df, terms_dict)
     graph = graphs[0]
@@ -456,7 +456,7 @@ def get_data(df, terms_dict):
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):
         data[i, :] = th.FloatTensor(row.esm2)
-        for go_id in row.prop_annotations: # prop_annotations for full model
+        for go_id in row.prop_annotations:
             if go_id in terms_dict:
                 g_id = terms_dict[go_id]
                 labels[i, g_id] = 1

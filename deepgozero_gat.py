@@ -17,6 +17,7 @@ import dgl
 from torch_utils import FastTensorDataLoader
 import csv
 from torch.optim.lr_scheduler import MultiStepLR
+from deepgo.data import load_ppi_data, load_normal_forms
 
 
 @ck.command()
@@ -312,7 +313,7 @@ class DeepGO2Model(nn.Module):
             nn.Linear(hidden_dim, nb_gos),
             nn.Sigmoid())
 
-                # ELEmbeddings
+        # ELEmbeddings
         self.embed_dim = embed_dim
         self.hasFuncIndex = th.LongTensor([nb_rels]).to(device)
         self.go_embed = nn.Embedding(nb_gos + nb_zero_gos, embed_dim)
