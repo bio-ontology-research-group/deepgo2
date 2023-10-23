@@ -1,5 +1,6 @@
 import torch as th
 from torch import nn
+import math
 
 
 class Residual(nn.Module):

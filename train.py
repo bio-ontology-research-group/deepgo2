@@ -1,6 +1,6 @@
 import click as ck
 import pandas as pd
-from utils import Ontology
+from deepgo.utils import Ontology
 import torch as th
 import numpy as np
 from torch import nn
@@ -12,8 +12,7 @@ import copy
 from torch.utils.data import DataLoader, IterableDataset, TensorDataset
 from itertools import cycle
 import math
-from aminoacids import to_onehot, MAXLEN
-from torch_utils import FastTensorDataLoader
+from deepgo.torch_utils import FastTensorDataLoader
 from multiprocessing import Pool
 from functools import partial
 from deepgo.data import load_data, load_normal_forms
@@ -61,17 +60,6 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
 
     # Load Gene Ontology and Normalized axioms
     go = Ontology(go_file, with_rels=True)
-    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
-        go_norm_file, terms_dict)
-    n_rels = len(relations)
-    n_zeros = len(zero_classes)
-
-    normal_forms = nf1, nf2, nf3, nf4
-    nf1 = th.LongTensor(nf1).to(device)
-    nf2 = th.LongTensor(nf2).to(device)
-    nf3 = th.LongTensor(nf3).to(device)
-    nf4 = th.LongTensor(nf4).to(device)
-    normal_forms = nf1, nf2, nf3, nf4
 
     # Load the datasets
     if model_name.find('esm') != -1:
@@ -91,6 +79,21 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
     test_features, test_labels = test_data
     valid_labels = valid_labels.detach().cpu().numpy()
     test_labels = test_labels.detach().cpu().numpy()
+
+    # Load normal forms
+    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
+        go_norm_file, terms_dict)
+    n_rels = len(relations)
+    n_zeros = len(zero_classes)
+
+    normal_forms = nf1, nf2, nf3, nf4
+    nf1 = th.LongTensor(nf1).to(device)
+    nf2 = th.LongTensor(nf2).to(device)
+    nf3 = th.LongTensor(nf3).to(device)
+    nf4 = th.LongTensor(nf4).to(device)
+    normal_forms = nf1, nf2, nf3, nf4
+
+    
     # Create DataLoaders
     train_loader = FastTensorDataLoader(
         *train_data, batch_size=batch_size, shuffle=True)

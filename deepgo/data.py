@@ -1,4 +1,6 @@
 import pandas as pd
+import torch as th
+import numpy as np
 
 
 def get_data(df, features_dict, terms_dict, features_length, features_column):
@@ -14,6 +16,9 @@ def get_data(df, features_dict, terms_dict, features_length, features_column):
             data[i, :] = th.FloatTensor(row.esm2)
         elif features_column == 'interpros':
             for feat in row.interpros:
+                data[i, features_dict[feat]] = 1 if feat in features_dict else 0
+        elif features_column == 'mf_preds':
+            for feat in row.mf_preds:
                 data[i, features_dict[feat]] = 1 if feat in features_dict else 0
         # Labels vector
         for go_id in row.prop_annotations:
@@ -35,6 +40,7 @@ def load_data(
     iprs_dict = {v:k for k, v in enumerate(iprs)}
     if features_column == 'interpros':
         features_length = len(iprs_dict)
+    
 
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
@@ -47,7 +53,10 @@ def load_data(
     return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
 
 
-def load_ppi_data(data_root, ont):
+def load_ppi_data(data_root, ont, features_length=2560,
+                  features_column='esm2', test_data_file='test_data.pkl',
+                  ppi_graph_file='ppi_test.bin'):
+    
     terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
@@ -57,16 +66,77 @@ def load_ppi_data(data_root, ont):
     mfs = mf_df['gos'].values
     mfs_dict = {v:k for k, v in enumerate(mfs)}
 
+    if features_column == 'mf_preds':
+        features_length = len(mfs_dict)
+    
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/{test_data_file}')
 
     df = pd.concat([train_df, valid_df, test_df])
-    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/ppi_nextprot.bin')
+    graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/{ppi_graph_file}')
 
-    data, labels = get_data(df, terms_dict)
+    data, labels = get_data(df, mfs_dict, terms_dict, features_length, features_column)
     graph = graphs[0]
     graph.ndata['feat'] = data
     graph.ndata['labels'] = labels
     train_nids, valid_nids, test_nids = nids['train_nids'], nids['valid_nids'], nids['test_nids']
-    return terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
+    return mfs_dict, terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
+
+
+
+def load_normal_forms(go_file, terms_dict):
+    """
+    Parses and loads normalized (using Normalize.groovy script)
+    ontology axioms file
+    Args:
+        go_file (string): Path to a file with normal forms
+        terms_dict (dict): Dictionary with GO classes that are predicted
+    Returns:
+        
+    """
+    nf1 = []
+    nf2 = []
+    nf3 = []
+    nf4 = []
+    relations = {}
+    zclasses = {}
+    
+    def get_index(go_id):
+        if go_id in terms_dict:
+            index = terms_dict[go_id]
+        elif go_id in zclasses:
+            index = zclasses[go_id]
+        else:
+            zclasses[go_id] = len(terms_dict) + len(zclasses)
+            index = zclasses[go_id]
+        return index
+
+    def get_rel_index(rel_id):
+        if rel_id not in relations:
+            relations[rel_id] = len(relations)
+        return relations[rel_id]
+                
+    with open(go_file) as f:
+        for line in f:
+            line = line.strip().replace('_', ':')
+            if line.find('SubClassOf') == -1:
+                continue
+            left, right = line.split(' SubClassOf ')
+            # C SubClassOf D
+            if len(left) == 10 and len(right) == 10:
+                go1, go2 = left, right
+                nf1.append((get_index(go1), get_index(go2)))
+            elif left.find('and') != -1: # C and D SubClassOf E
+                go1, go2 = left.split(' and ')
+                go3 = right
+                nf2.append((get_index(go1), get_index(go2), get_index(go3)))
+            elif left.find('some') != -1:  # R some C SubClassOf D
+                rel, go1 = left.split(' some ')
+                go2 = right
+                nf3.append((get_rel_index(rel), get_index(go1), get_index(go2)))
+            elif right.find('some') != -1: # C SubClassOf R some D
+                go1 = left
+                rel, go2 = right.split(' some ')
+                nf4.append((get_index(go1), get_rel_index(rel), get_index(go2)))
+    return nf1, nf2, nf3, nf4, relations, zclasses

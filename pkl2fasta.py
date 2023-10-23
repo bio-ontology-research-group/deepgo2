@@ -23,7 +23,8 @@ def main(data_file, out_file):
     print(len(df)) 
     with open(out_file, 'w') as f:
         for row in df.itertuples():
-            f.write('>' + row.proteins + '\n')
+            prot_id = row.proteins
+            f.write('>' + prot_id + '\n')
             f.write(row.sequences + '\n')
     
 

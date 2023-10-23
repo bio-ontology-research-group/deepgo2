@@ -75,6 +75,16 @@ def main(swissprot_file, out_file):
     
     
 def load_data(swissprot_file):
+    """
+    Parses UniProtKB data file and loads list of proteins and their
+    annotations to lists
+    Args:
+       swissprot_file (string): A path to the data file
+    Returns:
+       Tuple of 8 lists (proteins, accessions, sequences, string_ids,
+       orgs, genes, interpros)
+    """
+    
     proteins = list()
     accessions = list()
     sequences = list()

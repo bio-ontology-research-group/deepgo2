@@ -1,8 +1,21 @@
 from .base import BaseDeepGOModel, Residual, MLPBlock
+from torch import nn
+import torch as th
 
 
 class DeepGOModel(BaseDeepGOModel):
     """
+    DeepGO model with ElEmbeddings loss functions.
+
+    Args:
+        input_length (int): The number of input features
+        nb_gos (int): The number of Gene Ontology (GO) classes to predict
+        nb_zero_gos (int): The number of GO classes without training annotations
+        nb_rels (int): The number of relations in GO axioms
+        device (string): The compute device (cpu:0 or gpu:0)
+        hidden_dim (int): The hidden dimension for an MLP
+        embed_dim (int): Embedding dimension for GO classes and relations
+        margin (float): The margin parameter of ELEmbedding method
     """
 
     def __init__(self, input_length, nb_gos, nb_zero_gos, nb_rels, device, hidden_dim=2560, embed_dim=2560, margin=0.1):
@@ -23,7 +36,7 @@ class DeepGOModel(BaseDeepGOModel):
         Returns:
             torch.Tensor: Predictions after passing through DeepGOModel layers.
         """
-        x = self.mlp(features)
+        x = self.net(features)
         go_embed = self.go_embed(self.all_gos)
         hasFunc = self.rel_embed(self.hasFuncIndex)
         hasFuncGO = go_embed + hasFunc
