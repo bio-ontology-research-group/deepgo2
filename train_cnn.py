@@ -1,6 +1,6 @@
 import click as ck
 import pandas as pd
-from utils import Ontology
+from deepgo.utils import Ontology
 import torch as th
 import numpy as np
 from torch import nn
@@ -11,12 +11,16 @@ import copy
 from torch.utils.data import DataLoader, IterableDataset, TensorDataset
 from itertools import cycle
 import math
-from aminoacids import to_onehot, MAXLEN
+from deepgo.aminoacids import to_onehot, MAXLEN
 from dgl.nn import GraphConv
 import dgl
-from torch_utils import FastTensorDataLoader
+from deepgo.torch_utils import FastTensorDataLoader
 import csv
 from torch.optim.lr_scheduler import MultiStepLR
+from deepgo.utils import Ontology, propagate_annots
+from deepgo.metrics import compute_roc
+from multiprocessing import Pool
+from functools import partial
 
 
 @ck.command()
@@ -26,6 +30,9 @@ from torch.optim.lr_scheduler import MultiStepLR
 @ck.option(
     '--ont', '-ont', default='mf',
     help='Prediction model')
+@ck.option(
+    '--test-data-name', '-td', default='test',
+    help='Test data set. Choices: test, nextprot')
 @ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
@@ -37,18 +44,19 @@ from torch.optim.lr_scheduler import MultiStepLR
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, batch_size, epochs, load, device):
+def main(data_root, ont, test_data_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/deepgocnn.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/predictions_nextprot_deepgocnn.pkl'
+    out_file = f'{data_root}/{ont}/{test_data_name}_predictions_deepgocnn.pkl'
     
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
-    iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(data_root, ont)
+    test_data_file = f'{test_data_name}_data.pkl'
+    terms_dict, train_data, valid_data, test_data, test_df = load_data(
+        data_root, ont, terms_file, test_data_file=test_data_file)
     n_terms = len(terms_dict)
-    n_iprs = len(iprs_dict)
-
+    
     net = DGCNNModel(n_terms, device).to(device)
     
     train_features, train_labels = train_data
@@ -71,8 +79,6 @@ def main(data_root, ont, batch_size, epochs, load, device):
     best_loss = 10000.0
     if not load:
         print('Training the model')
-        log_file = open(f'{data_root}/train_logs.tsv', 'w')
-        logger = csv.writer(log_file, delimiter='\t')
         for epoch in range(epochs):
             net.train()
             train_loss = 0
@@ -105,11 +111,11 @@ def main(data_root, ont, batch_size, epochs, load, device):
                         logits = net(batch_features)
                         batch_loss = F.binary_cross_entropy(logits, batch_labels)
                         valid_loss += batch_loss.detach().item()
-                        preds = np.append(preds, logits.detach().cpu().numpy())
+                        preds.append(logits.detach().cpu().numpy())
                 valid_loss /= valid_steps
+                preds = np.concatenate(preds)
                 roc_auc = compute_roc(valid_labels, preds)
                 print(f'Epoch {epoch}: Loss - {train_loss}, Valid loss - {valid_loss}, AUC - {roc_auc}')
-                logger.writerow([epoch, train_loss, valid_loss, roc_auc])
             if valid_loss < best_loss:
                 best_loss = valid_loss
                 print('Saving model')
@@ -117,8 +123,7 @@ def main(data_root, ont, batch_size, epochs, load, device):
 
             scheduler.step()
             
-        log_file.close()
-
+    
     # Loading best model
     print('Loading the best model')
     net.load_state_dict(th.load(model_file))
@@ -135,49 +140,21 @@ def main(data_root, ont, batch_size, epochs, load, device):
                 logits = net(batch_features)
                 batch_loss = F.binary_cross_entropy(logits, batch_labels)
                 test_loss += batch_loss.detach().cpu().item()
-                preds = np.append(preds, logits.detach().cpu().numpy())
+                preds.append(logits.detach().cpu().numpy())
             test_loss /= test_steps
-        preds = preds.reshape(-1, n_terms)
+        preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
         print(f'Test Loss - {test_loss}, AUC - {roc_auc}')
 
     preds = list(preds)
     # Propagate scores using ontology structure
-    for i in range(len(preds)):
-        prop_annots = {}
-        for go_id, j in terms_dict.items():
-            score = preds[i][j]
-            for sup_go in go.get_anchestors(go_id):
-                if sup_go in prop_annots:
-                    prop_annots[sup_go] = max(prop_annots[sup_go], score)
-                else:
-                    prop_annots[sup_go] = score
-        for go_id, score in prop_annots.items():
-            if go_id in terms_dict:
-                preds[i][terms_dict[go_id]] = score
+    with Pool(32) as p:
+        preds = p.map(partial(propagate_annots, go=go, terms_dict=terms_dict), preds)
 
     test_df['preds'] = preds
 
     test_df.to_pickle(out_file)
 
-    
-def compute_roc(labels, preds):
-    # Compute ROC curve and ROC area for each class
-    fpr, tpr, _ = roc_curve(labels.flatten(), preds.flatten())
-    roc_auc = auc(fpr, tpr)
-
-    return roc_auc
-
-
-class Residual(nn.Module):
-
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x):
-        return x + self.fn(x)
-    
 
 class DGCNNModel(nn.Module):
 
@@ -210,27 +187,23 @@ class DGCNNModel(nn.Module):
     def forward(self, proteins):
         return self.deepgocnn(proteins)
     
-def load_data(data_root, ont):
-    terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
+def load_data(data_root, ont, terms_file, test_data_file='test_data.pkl'):
+    terms_df = pd.read_pickle(terms_file)
     terms = terms_df['gos'].values.flatten()
     terms_dict = {v: i for i, v in enumerate(terms)}
     print('Terms', len(terms))
     
-    ipr_df = pd.read_pickle(f'{data_root}/{ont}/interpros.pkl')
-    iprs = ipr_df['interpros'].values
-    iprs_dict = {v:k for k, v in enumerate(iprs)}
-
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
-    test_df = pd.read_pickle(f'{data_root}/{ont}/nextprot_data.pkl')
+    test_df = pd.read_pickle(f'{data_root}/{ont}/{test_data_file}')
 
-    train_data = get_data(train_df, iprs_dict, terms_dict)
-    valid_data = get_data(valid_df, iprs_dict, terms_dict)
-    test_data = get_data(test_df, iprs_dict, terms_dict)
+    train_data = get_data(train_df, terms_dict)
+    valid_data = get_data(valid_df, terms_dict)
+    test_data = get_data(test_df, terms_dict)
 
-    return iprs_dict, terms_dict, train_data, valid_data, test_data, test_df
+    return terms_dict, train_data, valid_data, test_data, test_df
 
-def get_data(df, iprs_dict, terms_dict):
+def get_data(df, terms_dict):
     data = th.zeros((len(df), 22, MAXLEN), dtype=th.float32)
     labels = th.zeros((len(df), len(terms_dict)), dtype=th.float32)
     for i, row in enumerate(df.itertuples()):

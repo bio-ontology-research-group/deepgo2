@@ -94,3 +94,25 @@ class DeepGOGATModel(BaseDeepGOModel):
         x = th.matmul(x, hasFuncGO.T) + go_rad
         logits = th.sigmoid(x)
         return logits
+
+
+    
+class MLPModel(nn.Module):
+    """
+    Baseline MLP model with two fully connected layers with residual connection
+    """
+    
+    def __init__(self, input_length, nb_gos, device, nodes=[2560,]):
+        super().__init__()
+        self.nb_gos = nb_gos
+        net = []
+        for hidden_dim in nodes:
+            net.append(MLPBlock(input_length, hidden_dim))
+            net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
+            input_length = hidden_dim
+        net.append(nn.Linear(input_length, nb_gos))
+        net.append(nn.Sigmoid())
+        self.net = nn.Sequential(*net)
+        
+    def forward(self, features):
+        return self.net(features)

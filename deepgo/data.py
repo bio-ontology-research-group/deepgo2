@@ -70,8 +70,17 @@ def load_ppi_data(data_root, ont, features_length=2560,
     mfs = mf_df['gos'].values
     mfs_dict = {v:k for k, v in enumerate(mfs)}
 
-    if features_column != 'esm2':
+    ipr_df = pd.read_pickle(f'{data_root}/{ont}/interpros.pkl')
+    iprs = ipr_df['interpros'].values
+    iprs_dict = {v:k for k, v in enumerate(iprs)}
+
+    if features_column == 'interpros':
+        features_length = len(iprs_dict)
+        feat_dict = iprs_dict
+    elif features_column != 'esm2':
         features_length = len(mfs_dict)
+        feat_dict = mfs_dict
+    
     
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
     valid_df = pd.read_pickle(f'{data_root}/{ont}/valid_data.pkl')
@@ -80,12 +89,12 @@ def load_ppi_data(data_root, ont, features_length=2560,
     df = pd.concat([train_df, valid_df, test_df])
     graphs, nids = dgl.load_graphs(f'{data_root}/{ont}/{ppi_graph_file}')
 
-    data, labels = get_data(df, mfs_dict, terms_dict, features_length, features_column)
+    data, labels = get_data(df, feat_dict, terms_dict, features_length, features_column)
     graph = graphs[0]
     graph.ndata['feat'] = data
     graph.ndata['labels'] = labels
     train_nids, valid_nids, test_nids = nids['train_nids'], nids['valid_nids'], nids['test_nids']
-    return mfs_dict, terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
+    return feat_dict, terms_dict, graph, train_nids, valid_nids, test_nids, data, labels, test_df
 
 
 

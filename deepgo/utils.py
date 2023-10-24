@@ -49,6 +49,21 @@ def get_goplus_defs(filename='data/definitions.txt'):
     return plus_defs
 
 
+def propagate_annots(preds, go, terms_dict):
+    prop_annots = {}
+    for go_id, j in terms_dict.items():
+        score = preds[j]
+        for sup_go in go.get_ancestors(go_id):
+            if sup_go in prop_annots:
+                prop_annots[sup_go] = max(prop_annots[sup_go], score)
+            else:
+                prop_annots[sup_go] = score
+    for go_id, score in prop_annots.items():
+        if go_id in terms_dict:
+            preds[terms_dict[go_id]] = score
+    return preds
+
+
 class Ontology(object):
 
     def __init__(self, filename='data/go.obo', with_rels=False):
@@ -150,7 +165,7 @@ class Ontology(object):
      
         return ont
 
-    def get_anchestors(self, term_id):
+    def get_ancestors(self, term_id):
         if term_id not in self.ont:
             return set()
         if term_id in self.ancestors:
@@ -229,56 +244,4 @@ def read_fasta(filename):
         seqs.append(seq)
         info.append(inf)
     return info, seqs
-
-
-class DataGenerator(object):
-
-    def __init__(self, batch_size, is_sparse=False):
-        self.batch_size = batch_size
-        self.is_sparse = is_sparse
-
-    def fit(self, inputs, targets=None):
-        self.start = 0
-        self.inputs = inputs
-        self.targets = targets
-        if isinstance(self.inputs, tuple) or isinstance(self.inputs, list):
-            self.size = self.inputs[0].shape[0]
-        else:
-            self.size = self.inputs.shape[0]
-        self.has_targets = targets is not None
-
-    def __next__(self):
-        return self.next()
-
-    def reset(self):
-        self.start = 0
-
-    def next(self):
-        if self.start < self.size:
-            batch_index = np.arange(
-                self.start, min(self.size, self.start + self.batch_size))
-            if isinstance(self.inputs, tuple) or isinstance(self.inputs, list):
-                res_inputs = []
-                for inp in self.inputs:
-                    if self.is_sparse:
-                        res_inputs.append(
-                            inp[batch_index, :].toarray())
-                    else:
-                        res_inputs.append(inp[batch_index, :])
-            else:
-                if self.is_sparse:
-                    res_inputs = self.inputs[batch_index, :].toarray()
-                else:
-                    res_inputs = self.inputs[batch_index, :]
-            self.start += self.batch_size
-            if self.has_targets:
-                if self.is_sparse:
-                    labels = self.targets[batch_index, :].toarray()
-                else:
-                    labels = self.targets[batch_index, :]
-                return (res_inputs, labels)
-            return res_inputs
-        else:
-            self.reset()
-            return self.next()
 
