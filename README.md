@@ -11,6 +11,8 @@ performance.
 
 # Dependencies
 * The code was developed and tested using python 3.10.
+* Clone the repository: `git clone https://github.com/bio-ontology-research-group/deepgo2.git`
+* Create virtual environment with Conda or python3-venv module. 
 * Install PyTorch: `pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2`
 * Install DGL: `pip install dgl==1.1.2+cu117 -f https://data.dgl.ai/wheels/cu117/repo.html`
 * Install other requirements:
@@ -24,34 +26,9 @@ Follow these instructions to obtain predictions for your proteins. You'll need
 * Extract `tar xvzf data.tar.gz`
 * Run the model `python predict.py -if data/example.fa`
 
-* https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/ - Here you can find the data
-used to train and evaluate our method.
- * data.tar.gz - UniProtKB-SwissProt dataset (release 21_04)
- * data-nextprot.tar.gz - neXtProt dataset
 
-## Scripts
+# Training the models
 The scripts require GeneOntology in OBO and OWL Formats.
-* uni2pandas.py - This script is used to convert data from UniProt
-database format to pandas dataframe.
-* deepgo2_data.py - This script is used to generate training and
-  testing datasets.
-* deepgozero_esm.py - This script is used to train the model with GO axioms
-* deepgozero_esm_plus.py - This script is used to train the model with GOPlus axioms
-* deepgozero_gat.py - This script is used to train the model which combines Graph Attention Networks
-* deepgozero_gat_plus.py - This script is used to train the GAT model with GOPlus axioms
-* deepgozero_gat_mf.py - This script is used to train the the GAT model with molecular functions as features
-* deepgozero_gat_mf_plus.py - This script is used to train the GAT model with MF features and GOPlus axioms
-* deepgozero_gat_mfpreds.py - This script is used to train the GAT model with predicted MF features
-* deepgozero_gat_mfpreds_plus.py - This script is used to train the GAT model with predicted MF features and GOPlus axioms
-* evaluate.py - The scripts are used to compute Fmax, Smin and AUPR
-* evaluate_terms.py - The scripts are used to compute class-centric average AUC
-* evaluate_entailment.py - The scripts are used to evaluate semantic entailment
-* Normalizer.groovy - The script used to normalize OWL ontology
-* Corpus.groovy - This script is used to extract class axiom definitions
-* deepgopro.py - This script is used to train the MLP baseline model
-* deepgocnn.py - This script is used to train the DeepGOCNN model
-
-
 
 ## Citation
 
