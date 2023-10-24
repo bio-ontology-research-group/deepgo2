@@ -1,7 +1,7 @@
 from .base import BaseDeepGOModel, Residual, MLPBlock
 from torch import nn
 import torch as th
-
+from dgl.nn import GATConv
 
 class DeepGOModel(BaseDeepGOModel):
     """
@@ -65,15 +65,23 @@ class DeepGOGATModel(BaseDeepGOModel):
 
         self.net1 = MLPBlock(input_length, hidden_dim)
         self.conv1 = GATConv(hidden_dim, hidden_dim, num_heads=1)
-        input_length = hidden_dim
         self.net2 = nn.Sequential(
             nn.Linear(hidden_dim, nb_gos),
             nn.Sigmoid())
 
     
     def forward(self, input_nodes, output_nodes, blocks):
+        """
+        Forward pass of the DeepGOGAT Model.
+        
+        Args:
+            input_nodes (torch.Tensor): Input tensor.
+            output_nodes (torch.Tensor): Input tensor.
+            blocks (graphs): DGL Graphs
+        Returns:
+            torch.Tensor: Predictions after passing through DeepGOModel layers.
+        """
         g1 = blocks[0]
-        # g2 = blocks[1]
         features = g1.ndata['feat']['_N']
         x = self.net1(features)
         x = self.conv1(g1, x).squeeze(dim=1)
@@ -82,6 +90,7 @@ class DeepGOGATModel(BaseDeepGOModel):
         hasFunc = self.rel_embed(self.hasFuncIndex)
         hasFuncGO = go_embed + hasFunc
         go_rad = th.abs(self.go_rad(self.all_gos).view(1, -1))
+
         x = th.matmul(x, hasFuncGO.T) + go_rad
         logits = th.sigmoid(x)
         return logits

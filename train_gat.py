@@ -1,22 +1,21 @@
 import click as ck
 import pandas as pd
-from utils import Ontology
+from deepgo.utils import Ontology
 import torch as th
 import numpy as np
 from torch import nn
 from torch.nn import functional as F
 from torch import optim
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
 import copy
 from torch.utils.data import DataLoader, IterableDataset, TensorDataset
 from itertools import cycle
 import math
-from aminoacids import to_onehot, MAXLEN
-from torch_utils import FastTensorDataLoader
+from deepgo.torch_utils import FastTensorDataLoader
 import csv
 from torch.optim.lr_scheduler import MultiStepLR
 from deepgo.models import DeepGOGATModel
 from deepgo.data import load_normal_forms, load_ppi_data
+import dgl
 
 
 @ck.command()
@@ -60,29 +59,16 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
 
     go = Ontology(go_file, with_rels=True)
 
-    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
-        go_norm_file, terms_dict)
-    n_rels = len(relations)
-    n_zeros = len(zero_classes)
-
     
-    normal_forms = nf1, nf2, nf3, nf4
-    nf1 = th.LongTensor(nf1).to(device)
-    nf2 = th.LongTensor(nf2).to(device)
-    nf3 = th.LongTensor(nf3).to(device)
-    nf4 = th.LongTensor(nf4).to(device)
-    normal_forms = nf1, nf2, nf3, nf4
-
     # Load the datasets
-    if model_name.find('esm') != -1:
-        features_length = 2560
-        features_column = 'esm2'
-    elif model_name.find('mfpreds'):
+    features_length = 2560
+    features_column = 'esm2'
+    if model_name.find('mfpreds') != -1:
         features_length = None # Optional in this case
-        features_column = 'mfpreds'
-    else:
+        features_column = 'mf_preds'
+    elif model_name.find('mf') != -1:
         features_length = None
-        features_column = 'mf'
+        features_column = 'prop_annotations'
     ppi_graph_file = f'ppi_{test_data_name}.bin'    
     test_data_file = f'{test_data_name}_data.pkl'
     
@@ -92,7 +78,7 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
 
     if features_column != 'esm2':
         features_length = len(mfs_dict)
-    
+
     valid_labels = labels[valid_nids].numpy()
     test_labels = labels[test_nids].numpy()
 
@@ -103,9 +89,23 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
     valid_nids = valid_nids.to(device)
     test_nids = test_nids.to(device)
 
-    loss_func = nn.BCELoss()
-    net = DeepGOGATModel(features_length, n_terms, n_rels, n_zeros, device).to(device)
+    # Load normal forms
+    nf1, nf2, nf3, nf4, relations, zero_classes = load_normal_forms(
+        go_norm_file, terms_dict)
+    n_rels = len(relations)
+    n_zeros = len(zero_classes)
+    
+    normal_forms = nf1, nf2, nf3, nf4
+    nf1 = th.LongTensor(nf1).to(device)
+    nf2 = th.LongTensor(nf2).to(device)
+    nf3 = th.LongTensor(nf3).to(device)
+    nf4 = th.LongTensor(nf4).to(device)
+    normal_forms = nf1, nf2, nf3, nf4
 
+
+    loss_func = nn.BCELoss()
+    net = DeepGOGATModel(features_length, n_terms, n_zeros, n_rels, device).to(device)
+    print(net)
     sampler = dgl.dataloading.MultiLayerFullNeighborSampler(1)
     train_dataloader = dgl.dataloading.DataLoader(
         graph, train_nids, sampler,

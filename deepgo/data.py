@@ -1,6 +1,7 @@
 import pandas as pd
 import torch as th
 import numpy as np
+import dgl
 
 
 def get_data(df, features_dict, terms_dict, features_length, features_column):
@@ -18,7 +19,10 @@ def get_data(df, features_dict, terms_dict, features_length, features_column):
             for feat in row.interpros:
                 data[i, features_dict[feat]] = 1 if feat in features_dict else 0
         elif features_column == 'mf_preds':
-            for feat in row.mf_preds:
+            for feat, score in row.mf_preds.items():
+                data[i, features_dict[feat]] = score if feat in features_dict else 0
+        elif features_column == 'prop_annotations':
+            for feat in row.prop_annotations:
                 data[i, features_dict[feat]] = 1 if feat in features_dict else 0
         # Labels vector
         for go_id in row.prop_annotations:
@@ -66,7 +70,7 @@ def load_ppi_data(data_root, ont, features_length=2560,
     mfs = mf_df['gos'].values
     mfs_dict = {v:k for k, v in enumerate(mfs)}
 
-    if features_column == 'mf_preds':
+    if features_column != 'esm2':
         features_length = len(mfs_dict)
     
     train_df = pd.read_pickle(f'{data_root}/{ont}/train_data.pkl')
