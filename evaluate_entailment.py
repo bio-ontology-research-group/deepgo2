@@ -19,7 +19,7 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
     '--data-root', '-dr', default='data',
     help='Prediction model')
 @ck.option(
-    '--model-name', '-m', default='deepgozero_esm',
+    '--model-name', '-m', default='deepgozero_esm_plus',
     help='Prediction model')
 @ck.option(
     '--ont', '-ont', default='mf',
@@ -59,6 +59,8 @@ def main(data_root, model_name, ont, combine, n_models):
 
     eval_preds = []
     top_models = get_top_models(ont, model_name, n_models)
+    print(top_models)
+    
     for i in top_models: #range(6):#[0, 5, 6, 8]:
         #if i not in top_models:
         #    continue
@@ -81,18 +83,12 @@ def main(data_root, model_name, ont, combine, n_models):
     if combine == 'avg':
         eval_preds /= len(top_models) # taking mean
     
-    fmax, smin, tmax, wfmax, wtmax, avg_auc, avgic, fmax_spec_match = compute_metrics(
-        test_df, go, terms_dict, eval_preds)
+    fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match = compute_metrics(
+        test_df, go, terms_dict, terms, ont, eval_preds)
 
     print(ont)
     print(f'Fmax: {fmax:0.3f}, Smin: {smin:0.3f}, threshold: {tmax}, spec: {fmax_spec_match}')
     print(f'WFmax: {wfmax:0.3f}, threshold: {wtmax}')
-    precisions = np.array(precisions)
-    recalls = np.array(recalls)
-    sorted_index = np.argsort(recalls)
-    recalls = recalls[sorted_index]
-    precisions = precisions[sorted_index]
-    aupr = np.trapz(precisions, recalls)
     print(f'AUPR: {aupr:0.3f}')
     print(f'AVGIC: {avgic:0.3f}')
 

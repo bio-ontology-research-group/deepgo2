@@ -12,7 +12,7 @@ from scipy import sparse
 import math
 from .utils import NAMESPACES, FUNC_DICT
 
-def compute_metrics(test_df, go, terms_dict, ont, eval_preds):
+def compute_metrics(test_df, go, terms_dict, terms, ont, eval_preds):
     labels = np.zeros((len(test_df), len(terms_dict)), dtype=np.float32)
     for i, row in enumerate(test_df.itertuples()):
         for go_id in row.prop_annotations:
@@ -80,8 +80,15 @@ def compute_metrics(test_df, go, terms_dict, ont, eval_preds):
             wtmax = threshold
         if smin > s:
             smin = s
+    precisions = np.array(precisions)
+    recalls = np.array(recalls)
+    sorted_index = np.argsort(recalls)
+    recalls = recalls[sorted_index]
+    precisions = precisions[sorted_index]
+    aupr = np.trapz(precisions, recalls)
+    
 
-    return fmax, smin, tmax, wfmax, wtmax, avg_auc, avgid, fmax_spec_match
+    return fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match
 
 
 def compute_roc(labels, preds):
