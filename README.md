@@ -21,14 +21,15 @@ performance.
 
 # Running DeepGO-SE model (with GOPlus axioms)
 Follow these instructions to obtain predictions for your proteins. You'll need
->30Gb storage and GPU with >16Gb memory (or you can use CPU)
+around 30Gb storage and a GPU with >16Gb memory (or you can use CPU)
 * Download the [data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/data.tar.gz)
 * Extract `tar xvzf data.tar.gz`
 * Run the model `python predict.py -if data/example.fa`
 
 
 # Training the models
-The scripts require GeneOntology in OBO and OWL Formats.
+To train the models and reproduce our results:
+* Download the [training-data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/training-data.tar.gz)
 
 ## Citation
 

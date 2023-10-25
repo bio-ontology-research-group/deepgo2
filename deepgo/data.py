@@ -17,13 +17,14 @@ def get_data(df, features_dict, terms_dict, features_length, features_column):
             data[i, :] = th.FloatTensor(row.esm2)
         elif features_column == 'interpros':
             for feat in row.interpros:
-                data[i, features_dict[feat]] = 1 if feat in features_dict else 0
+                if feat in features_dict:
+                    data[i, features_dict[feat]]
         elif features_column == 'mf_preds':
-            for feat, score in row.mf_preds.items():
-                data[i, features_dict[feat]] = score if feat in features_dict else 0
+            data[i, :] = th.FloatTensor(row.mf_preds)
         elif features_column == 'prop_annotations':
             for feat in row.prop_annotations:
-                data[i, features_dict[feat]] = 1 if feat in features_dict else 0
+                if feat in features_dict:
+                    data[i, features_dict[feat]] = 1
         # Labels vector
         for go_id in row.prop_annotations:
             if go_id in terms_dict:
