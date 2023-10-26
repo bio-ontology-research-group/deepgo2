@@ -185,9 +185,8 @@ class Ontology(object):
 
     def get_prop_terms(self, terms):
         prop_terms = set()
-
         for term_id in terms:
-            prop_terms |= self.get_anchestors(term_id)
+            prop_terms |= self.get_ancestors(term_id)
         return prop_terms
 
 
@@ -226,6 +225,15 @@ class Ontology(object):
         return term_set
 
 def read_fasta(filename):
+    """
+    Reads protein sequences from FASTA file
+    Args:
+       filename (string or pathlib.Path): FASTA filename
+    Returns:
+       info (list): List of protein ids
+       seqs (list): List of protein sequences
+    
+    """
     seqs = list()
     info = list()
     seq = ''
