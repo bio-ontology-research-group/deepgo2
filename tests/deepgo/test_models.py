@@ -60,7 +60,7 @@ class TestDeepGOModel(unittest.TestCase):
         ind = th.arange(self.nb_rels + 1) # + 1 for hasFunction relation
         embeds = self.model.rel_embed(ind)
         embed_n, embed_dim = embeds.shape
-        self.assertEqual(embed_n, self.nb_rel)
+        self.assertEqual(embed_n, self.nb_rels + 1)
         self.assertEqual(embed_dim, self.embed_dim)
 
 
@@ -130,7 +130,7 @@ class TestDeepGOGATModel(unittest.TestCase):
         ind = th.arange(self.nb_rels + 1) # + 1 for hasFunction relation
         embeds = self.model.rel_embed(ind)
         embed_n, embed_dim = embeds.shape
-        self.assertEqual(embed_n, self.nb_rel)
+        self.assertEqual(embed_n, self.nb_rels + 1)
         self.assertEqual(embed_dim, self.embed_dim)
 
 
