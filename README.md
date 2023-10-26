@@ -37,16 +37,23 @@ To train the models and reproduce our results:
 * Examples:
   - Train a single DeepGOZero MFO prediction model which uses InterPRO annotation features \
     `python train.py -m deepgozero -ont mf`
-  - Train a single DeepGOZero BPO prediction model which uses ESM2 embeddings \
-    `python train.py -m deepgozero_esm -ont bp`
+  - Train a single DeepGOZero CCO prediction model which uses ESM2 embeddings \
+    `python train.py -m deepgozero_esm -ont cc`
   - Train a single DeepGOGAT BPO prediction model which uses predicted MF features \
     `python train.py -m deepgogat_mfpreds_plus -ont bp`
     
     
-
-# Evaluating the predictions
-
-## Citation
+## Evaluating the predictions
+The training scripts generate predictions for the test data that are used
+to compute evaluation metrics.
+* To evaluate single predictions run evaluate.py script. Example: \
+  `python evaluate.py -m mlp -td test -on mf`
+* To evaluate approximate entailment predictions use evaluate_entailment.py
+  script. Example: \
+  `python evaluate_entailment.py -m deepgozero_esm -td nextprot -ont cc` \
+  Note: this script requires multiple trained models with performance reports
+  on the validation set.
+# Citation
 
 If you use DeepGO-SE for your research, or incorporate our learning
 algorithms in your work, please cite: Maxat Kulmanov, Francisco

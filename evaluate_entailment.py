@@ -15,25 +15,28 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 
 @ck.command()
+@ck.command()
 @ck.option(
     '--data-root', '-dr', default='data',
-    help='Prediction model')
+    help='Data folder')
 @ck.option(
-    '--model-name', '-m', default='deepgozero_esm_plus',
-    help='Prediction model')
+    '--ont', '-ont', default='mf', type=ck.Choice(['mf', 'bp', 'cc']),
+    help='GO subontology')
 @ck.option(
-    '--ont', '-ont', default='mf',
-    help='Sub ontology')
+    '--model-name', '-m', required=True, help='Prediction model name')
 @ck.option(
-    '--combine', '-c', default='avg',
-    help='Combination strategy for entailment')
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    help='Test data set name')
+@ck.option(
+    '--combine', '-c', default='avg', type=ck.Choice(['avg', 'min', 'max']),
+    help='Combination strategy')
 @ck.option(
     '--n-models', '-nm', default=6,
     help='Top N models for semantic entailment')
-def main(data_root, model_name, ont, combine, n_models):
+def main(data_root, ont, model_name, test_data_name, combine, n_models):
     train_data_file = f'{data_root}/{ont}/train_data.pkl'
     valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
-    test_data_file = f'{data_root}/{ont}/nextprot_predictions_{model_name}_0.pkl'
+    test_data_file = f'{data_root}/{ont}/{test_data_name}_predictions_{model_name}_0.pkl'
     terms_file = f'{data_root}/{ont}/terms.pkl'
     go = Ontology(f'{data_root}/go.obo', with_rels=True)
     terms_df = pd.read_pickle(terms_file)

@@ -32,7 +32,7 @@ import dgl
     default='deepgogat',
     help='Prediction model name')
 @ck.option(
-    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot', 'valid']),
     help='Test data set name')
 @ck.option(
     '--batch-size', '-bs', default=37,
