@@ -12,7 +12,7 @@ class DeepGOModel(BaseDeepGOModel):
         nb_gos (int): The number of Gene Ontology (GO) classes to predict
         nb_zero_gos (int): The number of GO classes without training annotations
         nb_rels (int): The number of relations in GO axioms
-        device (string): The compute device (cpu:0 or gpu:0)
+        device (string): The compute device (cpu:0 or cuda:0)
         hidden_dim (int): The hidden dimension for an MLP
         embed_dim (int): Embedding dimension for GO classes and relations
         margin (float): The margin parameter of ELEmbedding method
@@ -22,8 +22,8 @@ class DeepGOModel(BaseDeepGOModel):
         super().__init__(input_length, nb_gos, nb_zero_gos, nb_rels, device, hidden_dim, embed_dim, margin)
         # MLP Layers to project the input protein
         net = []
-        net.append(MLPBlock(input_length, hidden_dim))
-        net.append(Residual(MLPBlock(hidden_dim, hidden_dim)))
+        net.append(MLPBlock(input_length, embed_dim))
+        net.append(Residual(MLPBlock(embed_dim, embed_dim)))
         self.net = nn.Sequential(*net)
 
     def forward(self, features):
@@ -64,9 +64,9 @@ class DeepGOGATModel(BaseDeepGOModel):
         super().__init__(input_length, nb_gos, nb_zero_gos, nb_rels, device, hidden_dim, embed_dim, margin)
 
         self.net1 = MLPBlock(input_length, hidden_dim)
-        self.conv1 = GATConv(hidden_dim, hidden_dim, num_heads=1)
+        self.conv1 = GATConv(hidden_dim, embed_dim, num_heads=1)
         self.net2 = nn.Sequential(
-            nn.Linear(hidden_dim, nb_gos),
+            nn.Linear(embed_dim, nb_gos),
             nn.Sigmoid())
 
     

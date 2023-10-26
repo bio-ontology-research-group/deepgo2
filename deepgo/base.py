@@ -92,7 +92,7 @@ class BaseDeepGOModel(nn.Module):
         super().__init__()
         self.nb_gos = nb_gos
         self.nb_zero_gos = nb_zero_gos
-
+        self.nb_rels = nb_rels
         # ELEmbedding Model Layers
         self.embed_dim = embed_dim
         # Create additional index for hasFunction relation

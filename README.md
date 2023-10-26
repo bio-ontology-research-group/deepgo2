@@ -27,6 +27,14 @@ around 30Gb storage and a GPU with >16Gb memory (or you can use CPU)
 * Run the model `python predict.py -if data/example.fa`
 
 
+# Docker container
+We also provide a docker container with all dependencies installed:
+`docker pull coolmaksat/deepgose` \
+This repository is installed at /deepgo2 directory. To run the scripts you'll
+need to mount the data directory. Example: \
+`docker run --gpus all -v $(pwd)/data:/workspace/deepgo2/data coolmaksat/deepgose python predict.py -if data/example.fa`
+
+
 # Training the models
 To train the models and reproduce our results:
 * Download the [training-data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/training-data.tar.gz)
