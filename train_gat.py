@@ -21,16 +21,19 @@ import dgl
 @ck.command()
 @ck.option(
     '--data-root', '-dr', default='data',
-    help='Prediction model')
+    help='Data folder')
 @ck.option(
-    '--ont', '-ont', default='mf',
-    help='Prediction model')
+    '--ont', '-ont', default='mf', type=ck.Choice(['mf', 'bp', 'cc']),
+    help='GO subontology')
 @ck.option(
-    '--model-name', '-m', default='deepgozero_gat',
-    help='Prediction model')
+    '--model-name', '-m', type=ck.Choice([
+        'deepgogat', 'deepgogat_plus', 'deepgogat_mf', 'deepgozero_mf_plus',
+        'deepgogat_mfpreds', 'deepgogat_mfpreds_plus']),
+    default='deepgogat',
+    help='Prediction model name')
 @ck.option(
-    '--test-data-name', '-td', default='test',
-    help='Test data set. Choices: test, nextprot')
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    help='Test data set name')
 @ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
@@ -46,6 +49,8 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
     """
     This script is used to train DeepGOGAT models
     """
+    if ont == 'mf' and model_name.find('mf') != -1:
+        raise ValueError('Molecular function based model cannot be trained for MF ontology')
     if model_name.find('plus') != -1:
         go_norm_file = f'{data_root}/go-plus.norm'
         go_file = f'{data_root}/go-plus.obo'

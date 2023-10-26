@@ -27,13 +27,13 @@ from deepgo.metrics import compute_roc
 @ck.command()
 @ck.option(
     '--data-root', '-dr', default='data',
-    help='Prediction model')
+    help='Data folder')
 @ck.option(
-    '--ont', '-ont', default='mf',
-    help='Prediction model')
+    '--ont', '-ont', default='mf', type=ck.Choice(['mf', 'bp', 'cc']),
+    help='GO subontology')
 @ck.option(
-    '--test-data-name', '-td', default='test',
-    help='Test data set. Choices: test, nextprot')
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    help='Test data set name')
 @ck.option(
     '--batch-size', '-bs', default=37,
     help='Batch size for training')
@@ -43,7 +43,7 @@ from deepgo.metrics import compute_roc
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 @ck.option(
-    '--device', '-d', default='cuda:1',
+    '--device', '-d', default='cuda:0',
     help='Device')
 def main(data_root, ont, test_data_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
