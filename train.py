@@ -31,6 +31,8 @@ from deepgo.models import DeepGOModel
     default='deepgozero_esm',
     help='Prediction model name')
 @ck.option(
+    '--model-id', '-mi', type=int, required=False)
+@ck.option(
     '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot', 'valid']),
     help='Test data set name')
 @ck.option(
@@ -44,10 +46,13 @@ from deepgo.models import DeepGOModel
 @ck.option(
     '--device', '-d', default='cuda:0',
     help='Device')
-def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, device):
+def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device):
     """
     This script is used to train DeepGO models
     """
+    if model_id is not None:
+        model_name = f'{model_name}_{model_id}'
+
     if model_name.find('plus') != -1:
         go_norm_file = f'{data_root}/go-plus.norm'
         go_file = f'{data_root}/go-plus.obo'
@@ -202,6 +207,9 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         roc_auc = compute_roc(test_labels, preds)
         print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}')
 
+    # Save the performance into a file
+    with open(f'{data_root}/{ont}/valid_{model_name}.pf', 'w') as f:
+        f.write(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}\n')
     # return
     preds = list(preds)
     # Propagate scores using ontology structure

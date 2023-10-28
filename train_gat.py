@@ -32,6 +32,8 @@ import dgl
     default='deepgogat',
     help='Prediction model name')
 @ck.option(
+    '--model-id', '-mi', type=int, required=False)
+@ck.option(
     '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot', 'valid']),
     help='Test data set name')
 @ck.option(
@@ -45,10 +47,13 @@ import dgl
 @ck.option(
     '--device', '-d', default='cuda:1',
     help='Device')
-def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, device):
+def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device):
     """
     This script is used to train DeepGOGAT models
     """
+    if model_id is not None:
+        model_name = f'{model_name}_{model_id}'
+
     if ont == 'mf' and model_name.find('mf') != -1:
         raise ValueError('Molecular function based model cannot be trained for MF ontology')
     if model_name.find('plus') != -1:
@@ -221,6 +226,9 @@ def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, d
         preds = np.concatenate(preds)
         roc_auc = compute_roc(test_labels, preds)
     print(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, AUC - {roc_auc}')
+    # Save the performance into a file
+    with open(f'{data_root}/{ont}/valid_{model_name}.pf', 'w') as f:
+        f.write(f'Valid Loss - {valid_loss}, Test Loss - {test_loss}, Test AUC - {roc_auc}\n')
     
     preds = list(preds)
     # Propagate scores using ontology structure

@@ -75,6 +75,8 @@ def load_ppi_data(data_root, ont, features_length=2560,
     iprs = ipr_df['interpros'].values
     iprs_dict = {v:k for k, v in enumerate(iprs)}
 
+    feat_dict = None
+    
     if features_column == 'interpros':
         features_length = len(iprs_dict)
         feat_dict = iprs_dict
