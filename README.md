@@ -48,8 +48,10 @@ To train the models and reproduce our results:
   - Train a single DeepGOZero CCO prediction model which uses ESM2 embeddings \
     `python train.py -m deepgozero_esm -ont cc`
   - Train a single DeepGOGAT BPO prediction model which uses predicted MF features \
-    `python train.py -m deepgogat_mfpreds_plus -ont bp`
-    
+    `python train_gat.py -m deepgogat_mfpreds_plus -ont bp`
+* Training 10 models for entailment:
+  - DeepGO-SE models: `./train_se.sh <model_name> <ontology>`
+  - DeepGOGAT-SE models: `./train_gat_se.sh <model_name> <ontology>`
     
 ## Evaluating the predictions
 The training scripts generate predictions for the test data that are used
@@ -61,6 +63,9 @@ to compute evaluation metrics.
   `python evaluate_entailment.py -m deepgozero_esm -td nextprot -ont cc` \
   Note: this script requires multiple trained models with performance reports
   on the validation set.
+
+
+
 # Citation
 
 If you use DeepGO-SE for your research, or incorporate our learning
