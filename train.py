@@ -17,6 +17,7 @@ from multiprocessing import Pool
 from functools import partial
 from deepgo.data import load_data, load_normal_forms
 from deepgo.models import DeepGOModel
+from deepgo.metrics import compute_roc
 
 @ck.command()
 @ck.option(
@@ -55,11 +56,10 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
 
     if model_name.find('plus') != -1:
         go_norm_file = f'{data_root}/go-plus.norm'
-        go_file = f'{data_root}/go-plus.obo'
     else:
         go_norm_file = f'{data_root}/go.norm'
-        go_file = f'{data_root}/go.obo'
         
+    go_file = f'{data_root}/go.obo'
     model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
     out_file = f'{data_root}/{ont}/{test_data_name}_predictions_{model_name}.pkl'

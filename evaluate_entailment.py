@@ -15,7 +15,6 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
 
 @ck.command()
-@ck.command()
 @ck.option(
     '--data-root', '-dr', default='data',
     help='Data folder')
@@ -85,7 +84,7 @@ def main(data_root, ont, model_name, test_data_name, combine, n_models):
     eval_preds = np.stack(eval_preds).reshape(-1, len(terms))
     if combine == 'avg':
         eval_preds /= len(top_models) # taking mean
-    
+
     fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match = compute_metrics(
         test_df, go, terms_dict, terms, ont, eval_preds)
 

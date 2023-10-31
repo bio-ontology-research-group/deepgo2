@@ -45,6 +45,27 @@ class DeepGOModel(BaseDeepGOModel):
         logits = th.sigmoid(x)
         return logits
 
+    def forward_nf4(self, features):
+        """
+        Forward pass with Normal Form four.
+        
+        Args:
+            features (torch.Tensor): Input tensor.
+
+        Returns:
+            torch.Tensor: Predictions after passing through DeepGOModel layers.
+        """
+        x = self.net(features)
+        go_embed = self.go_embed(self.all_gos)
+        hasFunc = self.rel_embed(self.hasFuncIndex)
+        hasFuncGO = go_embed + hasFunc
+        go_rad = th.abs(self.go_rad(self.all_gos).view(1, -1))
+        x = x.unsqueeze(dim=1).expand(-1, self.nb_gos, -1)
+        dst = th.linalg.norm(x - hasFuncGO, dim=2)
+        logits = th.relu(dst - go_rad - self.margin)
+        return logits
+
+
 
 class DeepGOGATModel(BaseDeepGOModel):
     """

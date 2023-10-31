@@ -64,8 +64,25 @@ to compute evaluation metrics.
   Note: this script requires multiple trained models with performance reports
   on the validation set.
 
-
-
+# Generating the data
+The data used in to train our models are available for download. However,
+if you like to generate a new dataset follow these steps:
+* Download [Gene Ontology](https://geneontology.org/docs/download-ontology/).
+You'll need go.obo, go.owl and go-plus.owl files and save them into data folder.
+We use Groovy scripts to process the ontology files. Install Groovy by
+following the instructions [here](https://groovy-lang.org/install.html)
+and execute the following commands: \
+  - Normalize GO: \
+    `groovy groovy/Normalize.groovy -i data/go.owl -o data/go.norm`
+  - Filter out GO-Plus non EL axioms: \
+    `groovy groovy/makeEL.groovy data/go-plus.owl data/go-plus-el.owl`
+  - Normalize GO-Plus: \
+    `groovy groovy/Normalize.groovy -i data/go-plus-el.owl -o data/go-plus.norm`
+* Download [UniProt-KB](https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.dat.gz) data
+  and save it to the data folder.
+  - Parse UniProt-KB data and save it to pandas DataFrame: \
+    `python gen_data/uni2pandas.py -sf data/uniprot_sprot.dat.gz -o data/swissprot_exp.pkl`
+  
 # Citation
 
 If you use DeepGO-SE for your research, or incorporate our learning
