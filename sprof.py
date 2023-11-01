@@ -3,17 +3,11 @@
 import numpy as np
 import pandas as pd
 import click as ck
-from sklearn.metrics import classification_report
-from sklearn.metrics.pairwise import cosine_similarity
 import sys
 from collections import deque
 import time
 import logging
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from scipy.spatial import distance
-from scipy import sparse
-import math
-from utils import FUNC_DICT, Ontology, NAMESPACES
+from deepgo.utils import FUNC_DICT, Ontology, NAMESPACES
 import os
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
@@ -82,7 +76,7 @@ def main(data_root, ont):
                 pred_scores[i] = prop_annots[go_id]
         preds.append(pred_scores)
     test_df['preds'] = preds
-    test_df.to_pickle(f'{data_root}/{ont}/predictions_nextprot_sprof.pkl')
+    test_df.to_pickle(f'{data_root}/{ont}/nextprot_predictions_sprof.pkl')
     
 if __name__ == '__main__':
     main()
