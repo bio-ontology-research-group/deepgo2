@@ -7,8 +7,7 @@ import sys
 from collections import deque, Counter
 import time
 import logging
-from utils import FUNC_DICT, Ontology, NAMESPACES
-from matplotlib import pyplot as plt
+from deepgo.utils import FUNC_DICT, Ontology, NAMESPACES
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 
@@ -20,11 +19,14 @@ logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
 @ck.option(
     '--ont', '-ont', default='mf',
     help='GO subontology (bp, mf, cc)')
-def main(data_root, ont):
+@ck.option(
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    help='Test data set name')
+def main(data_root, ont, test_data_name):
     train_data_file = f'{data_root}/{ont}/train_data.pkl'
     valid_data_file = f'{data_root}/{ont}/valid_data.pkl'
-    test_data_file = f'{data_root}/{ont}/nextprot_data.pkl'
-    out_file = f'{data_root}/{ont}/predictions_nextprot_naive.pkl'
+    test_data_file = f'{data_root}/{ont}/{test_data_name}_data.pkl'
+    out_file = f'{data_root}/{ont}/{test_data_name}_predictions_naive.pkl'
     
     go_rels = Ontology(f'{data_root}/go.obo', with_rels=True)
     terms_df = pd.read_pickle(f'{data_root}/{ont}/terms.pkl')
