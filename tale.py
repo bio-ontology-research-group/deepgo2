@@ -3,17 +3,12 @@
 import numpy as np
 import pandas as pd
 import click as ck
-from sklearn.metrics import classification_report
-from sklearn.metrics.pairwise import cosine_similarity
 import sys
 from collections import deque
 import time
 import logging
-from sklearn.metrics import roc_curve, auc, matthews_corrcoef
-from scipy.spatial import distance
-from scipy import sparse
 import math
-from utils import FUNC_DICT, Ontology, NAMESPACES
+from deepgo.utils import FUNC_DICT, Ontology, NAMESPACES
 import os
 
 logging.basicConfig(format='%(levelname)s:%(message)s', level=logging.INFO)
@@ -64,7 +59,7 @@ def main(test_data_file, terms_file,
             annots = tale_scores[prot_id]
             prop_annots = annots.copy()
             for go_id, score in annots.items():
-                for sup_go in go_rels.get_anchestors(go_id):
+                for sup_go in go_rels.get_ancestors(go_id):
                     if sup_go in prop_annots:
                         prop_annots[sup_go] = max(prop_annots[sup_go], score)
                     else:
