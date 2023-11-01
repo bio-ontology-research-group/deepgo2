@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import os
+import sys
+sys.path.append('.')
 
 import click as ck
 import numpy as np
@@ -13,10 +16,13 @@ import dgl
 
 
 @ck.command()
-def main():
+@ck.option(
+    '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
+    help='Test data set name')
+def main(test_data_name):
 
     for ont in ['mf', 'bp', 'cc']:
-        train_df = pd.read_pickle(f'data/{ont}/train_data_int.pkl')
+        train_df = pd.read_pickle(f'data/{ont}/train_data.pkl')
         proteins = train_df['proteins']
         prot_idx = {v: k for k, v in enumerate(proteins)}
         src = []
@@ -37,7 +43,7 @@ def main():
         print(len(src), len(proteins))
         
         train_n = len(proteins)
-        valid_df = pd.read_pickle(f'data/{ont}/valid_data_int.pkl')
+        valid_df = pd.read_pickle(f'data/{ont}/valid_data.pkl')
         valid_proteins = valid_df['proteins']
         for i, p_id in enumerate(valid_proteins):
             prot_idx[p_id] = train_n + i
@@ -68,7 +74,7 @@ def main():
 
         train_df = pd.concat([train_df, valid_df])
 
-        test_df = pd.read_pickle(f'data/{ont}/nextprot_data.pkl')
+        test_df = pd.read_pickle(f'data/{ont}/{test_data_name}_data.pkl')
         test_proteins = test_df['proteins']
         for i, p_id in enumerate(test_proteins):
             prot_idx[p_id] = train_n + valid_n + i
@@ -101,7 +107,7 @@ def main():
         graph.edata['etypes'] = th.LongTensor(edge_types)
         graph = dgl.add_self_loop(graph)
         dgl.save_graphs(
-            f'data/{ont}/ppi_nextprot.bin', graph,
+            f'data/{ont}/ppi_{test_data_name}.bin', graph,
             {
                 'train_nids': th.LongTensor(np.arange(train_n)),
                 'valid_nids': th.LongTensor(np.arange(train_n, train_n + valid_n)),

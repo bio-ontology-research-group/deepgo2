@@ -1,16 +1,18 @@
-data_root=$1
+!#/bin/sh
+data_root=data
 
-for ont in mf bp cc all; do
-    echo $ont
-    python diamond_data.py -df $data_root/$ont/train_data.pkl -of $data_root/$ont/train_data.fa
-    python diamond_data.py -df $data_root/$ont/valid_data.pkl -of $data_root/$ont/valid_data.fa
-    python diamond_data.py -df $data_root/$ont/test_data.pkl -of $data_root/$ont/test_data.fa
+echo "Parsing UniProt data and creating the DataFrame"
+python gendata/uni2pandas.py -sf $data_root/uniprot_sprot.dat.gz -o $data_root/swissprot_exp.pkl
 
-    # Create diamond database
-    diamond makedb --in $data_root/$ont/train_data.fa --db $data_root/$ont/train_data.dmnd
+echo "Adding interactions data to the DataFrame"
+python gendata/ppi_data.py
 
-    # Run blastp
-    diamond blastp --more-sensitive -d $data_root/$ont/train_data.dmnd -q $data_root/$ont/train_data.fa --outfmt 6 qseqid sseqid bitscore pident > $data_root/$ont/train_diamond.res
-    diamond blastp --more-sensitive -d $data_root/$ont/train_data.dmnd -q $data_root/$ont/valid_data.fa --outfmt 6 qseqid sseqid bitscore pident > $data_root/$ont/valid_diamond.res
-    diamond blastp --more-sensitive -d $data_root/$ont/train_data.dmnd -q $data_root/$ont/test_data.fa --outfmt 6 qseqid sseqid bitscore pident > $data_root/$ont/test_diamond.res
-done
+echo "Creating FASTA file for diamond database"
+python gendata/pkl2fasta.py -df $data_root/swissprot_exp.pkl -o $data_root/swissprot_exp.fa
+
+echo "Creating Diamond database and compute similarities"
+diamond makedb --in $data_root/swissprot_exp.fa --db $data_root/swissprot_exp.dmnd
+diamond blastp --very-sensitive -d $data_root/swissprot_exp.dmnd -q $data_root/$ont/train_data.fa --outfmt 6 qseqid sseqid bitscore pident > $data_root/swissprot_exp.sim
+
+echo "Splitting train/valid/test"
+python gendata/deepgo2_data.py

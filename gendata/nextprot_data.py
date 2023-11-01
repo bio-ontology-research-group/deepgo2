@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import os
+import sys
+sys.path.append('.')
 
 import click as ck
 import numpy as np

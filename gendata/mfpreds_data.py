@@ -1,18 +1,23 @@
 #!/usr/bin/env python
+import os
+import sys
+sys.path.append('.')
 
 import click as ck
 import numpy as np
 import pandas as pd
 import gzip
 import logging
-from utils import NAMESPACES, Ontology, get_goplus_defs
+from deepgo.utils import NAMESPACES, Ontology
 from collections import Counter
 import json
 import os
 import math
 import torch as th
 
-from deepgozero_esm_plus import DGZeroModel, load_normal_forms
+from deepgo.models import DeepGOModel
+from deepgo.data import load_normal_forms
+
 from evaluate_entailment import get_top_models
 
 logging.basicConfig(level=logging.INFO)

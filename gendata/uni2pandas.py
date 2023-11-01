@@ -1,15 +1,15 @@
 #!/usr/bin/env python
+import os
+import sys
+sys.path.append('.')
 
 import click as ck
 import numpy as np
 import pandas as pd
 import gzip
 import logging
-from utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
+from deepgo.utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
 
-logging.basicConfig(level=logging.INFO)
-
-ORGS = set(['HUMAN', 'MOUSE', ])
 
 @ck.command()
 @ck.option(

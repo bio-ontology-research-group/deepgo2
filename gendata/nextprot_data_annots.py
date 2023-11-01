@@ -1,17 +1,15 @@
+import os
+import sys
+sys.path.append('.')
+
 import click as ck
 import numpy as np
 import pandas as pd
 import os
 from collections import Counter, deque
-from utils import (
+from deepgo.utils import (
     Ontology, FUNC_DICT, NAMESPACES, MOLECULAR_FUNCTION, BIOLOGICAL_PROCESS,
     CELLULAR_COMPONENT, HAS_FUNCTION)
-import logging
-import mowl
-mowl.init_jvm("64g")
-import java
-from mowl.owlapi import OWLAPIAdapter, Imports
-from org.semanticweb.owlapi.model import IRI
 
 
 logging.basicConfig(level=logging.INFO)
@@ -34,7 +32,7 @@ def main(go_file, data_file):
     logging.info('Processing annotations')
     
     annotations = list()
-    for ont in ['cc',]:#, 'bp', 'cc', 'all']:
+    for ont in ['mf', 'bp',]:
         train_df = pd.read_pickle(f'data/{ont}/train_data.pkl')
         valid_df = pd.read_pickle(f'data/{ont}/valid_data.pkl')
         train_df = pd.concat([train_df, valid_df])

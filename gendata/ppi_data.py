@@ -1,4 +1,7 @@
 #!/usr/bin/env python
+import os
+import sys
+sys.path.append('.')
 
 import click as ck
 import numpy as np
@@ -13,9 +16,14 @@ import dgl
 
 
 @ck.command()
-def main():
-
-    df = pd.read_pickle('data/swissprot_exp_esm2.pkl')
+@ck.option(
+    '--string-db-actions-file', '-sdb', default='data/protein.actions.v11.0.txt.gz'),
+    help='String Database Actions file')
+@ck.option(
+    '--data-file', '-df', default='data/swissprot_exp.pkl'),
+    help='Swissprot pandas DataFrame')
+def main(string_db_actions_file, data_file):
+    df = pd.read_pickle(data_file)
     proteins = df['proteins']
     prot_idx = {v: k for k, v in enumerate(proteins)}
 
@@ -25,7 +33,7 @@ def main():
             mapping[st_id] = row.proteins
     relations = {}
     inters = {}
-    with gzip.open('data/protein.actions.v11.0.txt.gz', 'rt') as f:
+    with gzip.open(string_db_actions_file, 'rt') as f:
         next(f)
         for line in f:
             it = line.strip().split('\t')
@@ -52,8 +60,7 @@ def main():
         else:
             interactions.append([])
     df['interactions'] = interactions
-    print(relations)
-    # df.to_pickle('data/swissprot_interactions.pkl')
+    df.to_pickle(data_file)
             
 if __name__ == '__main__':
     main()

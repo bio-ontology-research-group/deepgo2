@@ -80,9 +80,11 @@ and execute the following commands: \
     `groovy groovy/Normalize.groovy -i data/go-plus-el.owl -o data/go-plus.norm`
 * Download [UniProt-KB](https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.dat.gz) data
   and save it to the data folder.
-  - Parse UniProt-KB data and save it to pandas DataFrame: \
-    `python gen_data/uni2pandas.py -sf data/uniprot_sprot.dat.gz -o data/swissprot_exp.pkl`
-  
+* Download StringDB v11.0 [protein.actions.v11.0.txt.gz](https://stringdb-static.org/download/protein.actions.v11.0.txt.gz)
+* Install [Diamond](https://github.com/bbuchfink/diamond/wiki/2.-Installation)
+  - Run data generation script: \
+    `sh generated_data.sh`
+
 # Citation
 
 If you use DeepGO-SE for your research, or incorporate our learning
