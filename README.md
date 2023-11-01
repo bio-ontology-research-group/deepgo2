@@ -82,8 +82,8 @@ and execute the following commands: \
   and save it to the data folder.
 * Download StringDB v11.0 [protein.actions.v11.0.txt.gz](https://stringdb-static.org/download/protein.actions.v11.0.txt.gz)
 * Install [Diamond](https://github.com/bbuchfink/diamond/wiki/2.-Installation)
-  - Run data generation script: \
-    `sh generated_data.sh`
+* Run data generation script: \
+  `sh generated_data.sh`
 
 # Citation
 
