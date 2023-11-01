@@ -32,7 +32,7 @@ ont = 'mf'
     '--tale-scores-file', '-tsf', default=f'data/tale/deepgo2_nextprot_{ont}.txt',
     help='TALE predictions')
 @ck.option(
-    '--out_file', '-of', default=f'data/{ont}/predictions_nextprot_tale.pkl', help='Output file')
+    '--out_file', '-of', default=f'data/{ont}/nextprot_predictions_tale.pkl', help='Output file')
 def main(test_data_file, terms_file,
          tale_scores_file, out_file):
 
