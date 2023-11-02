@@ -23,7 +23,7 @@ import os
 @ck.option('--threshold', '-t', default=0.1, help='Prediction threshold')
 @ck.option('--batch-size', '-bs', default=32, help='Batch size for prediction model')
 @ck.option(
-    '--device', '-d', default='cpu:0',
+    '--device', '-d', default='cpu',
     help='Device')
 def main(in_file, data_root, threshold, batch_size, device):
 
