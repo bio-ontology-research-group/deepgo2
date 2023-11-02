@@ -16,6 +16,8 @@ from deepgo.utils import Ontology, propagate_annots
 from deepgo.models import DeepGOGATModel
 from deepgo.data import load_normal_forms, load_ppi_data
 from deepgo.metrics import compute_roc
+from multiprocessing import Pool
+from functools import partial
 import dgl
 
 
