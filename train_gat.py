@@ -15,6 +15,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from deepgo.utils import Ontology, propagate_annots
 from deepgo.models import DeepGOGATModel
 from deepgo.data import load_normal_forms, load_ppi_data
+from deepgo.metrics import compute_roc
 import dgl
 
 
