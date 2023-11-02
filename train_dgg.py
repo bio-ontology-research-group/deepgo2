@@ -17,6 +17,8 @@ import csv
 from torch.optim.lr_scheduler import MultiStepLR
 from deepgo.data import load_ppi_data
 from deepgo.metrics import compute_roc
+from multiprocessing import Pool
+from functools import partial
 
 
 @ck.command()

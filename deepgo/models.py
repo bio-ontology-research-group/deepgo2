@@ -123,7 +123,7 @@ class MLPModel(nn.Module):
     Baseline MLP model with two fully connected layers with residual connection
     """
     
-    def __init__(self, input_length, nb_gos, device, nodes=[2560,]):
+    def __init__(self, input_length, nb_gos, device, nodes=[1024,]):
         super().__init__()
         self.nb_gos = nb_gos
         net = []

@@ -32,6 +32,11 @@ from deepgo.metrics import compute_roc
     '--ont', '-ont', default='mf', type=ck.Choice(['mf', 'bp', 'cc']),
     help='GO subontology')
 @ck.option(
+    '--model-name', '-m', type=ck.Choice([
+        'mlp', 'mlp_esm']),
+    default='mlp',
+    help='Prediction model name')
+@ck.option(
     '--test-data-name', '-td', default='test', type=ck.Choice(['test', 'nextprot']),
     help='Test data set name')
 @ck.option(
@@ -45,19 +50,29 @@ from deepgo.metrics import compute_roc
 @ck.option(
     '--device', '-d', default='cuda:0',
     help='Device')
-def main(data_root, ont, test_data_name, batch_size, epochs, load, device):
+def main(data_root, ont, model_name, test_data_name, batch_size, epochs, load, device):
     go_file = f'{data_root}/go.obo'
-    model_file = f'{data_root}/{ont}/mlp_esm.th'
+    model_file = f'{data_root}/{ont}/{model_name}.th'
     terms_file = f'{data_root}/{ont}/terms.pkl'
-    out_file = f'{data_root}/{ont}/{test_data_name}_predictions_mlp_esm.pkl'
+    out_file = f'{data_root}/{ont}/{test_data_name}_predictions_{model_name}.pkl'
 
     go = Ontology(go_file, with_rels=True)
     loss_func = nn.BCELoss()
+
+    # Load the datasets
+    if model_name.find('esm') != -1:
+        features_length = 2560
+        features_column = 'esm2'
+    else:
+        features_length = None # Optional in this case
+        features_column = 'interpros'
+
     test_data_file = f'{test_data_name}_data.pkl'
     iprs_dict, terms_dict, train_data, valid_data, test_data, test_df = load_data(
-        data_root, ont, terms_file, test_data_file=test_data_file)
+        data_root, ont, terms_file, features_length, features_column, test_data_file=test_data_file)
     n_terms = len(terms_dict)
-    features_length = 2560
+    if features_column == 'interpros':
+        features_length = len(iprs_dict)
     net = MLPModel(features_length, n_terms, device).to(device)
     print(net)
     
