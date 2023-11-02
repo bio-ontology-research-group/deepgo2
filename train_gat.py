@@ -45,7 +45,7 @@ import dgl
 @ck.option(
     '--load', '-ld', is_flag=True, help='Load Model?')
 @ck.option(
-    '--device', '-d', default='cuda:1',
+    '--device', '-d', default='cuda:0',
     help='Device')
 def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epochs, load, device):
     """
