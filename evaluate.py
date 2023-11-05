@@ -66,7 +66,8 @@ def main(data_root, ont, model_name, test_data_name):
         eval_preds.append(preds)
 
     eval_preds = np.concatenate(eval_preds).reshape(-1, len(terms))
-
+    # np.save(f'{data_root}/{ont}/{model_name}_preds.npy', eval_preds)
+    # return
     fmax, smin, tmax, wfmax, wtmax, avg_auc, aupr, avgic, fmax_spec_match = compute_metrics(
         test_df, go, terms_dict, terms, ont, eval_preds)
     print(model_name, ont)
