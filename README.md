@@ -38,6 +38,15 @@ need to mount the data directory. Example: \
 # Training the models
 To train the models and reproduce our results:
 * Download the [training-data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/training-data.tar.gz)
+  - The training data includes both UniProtKB/SwissProt dataset and the neXtProt
+    evaluation dataset.
+  - mf, bp and cc subfolders include:
+    - train_data.pkl - training proteins
+    - valid_data.pkl - validation proteins
+    - test_data.pkl - testing proteins
+    - nextprot_data.pkl - neXtProt dataset proteins (except cc folder)
+    - terms.pkl - list of GO terms for each subontology
+    - interpros.pkl - list of InterPRO ids used as features
 * train.py and train_gat.py scripts are used to train different versions of
   DeepGOSE and DeepGOGATSE models correspondingly
 * train_cnn.py, train_mlp.py and train_dgg.py scripts are used to train

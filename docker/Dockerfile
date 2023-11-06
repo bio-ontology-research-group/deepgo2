@@ -10,3 +10,5 @@ RUN pip install dgl==1.1.2+cu117 -f https://data.dgl.ai/wheels/cu117/repo.html
 WORKDIR /workspace/deepgo2/
 
 RUN pip install -r requirements.txt
+
+RUN git pull origin main
