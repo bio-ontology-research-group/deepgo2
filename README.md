@@ -48,6 +48,7 @@ To train the models and reproduce our results:
     - nextprot_data.pkl - neXtProt dataset proteins (except cc folder)
     - terms.pkl - list of GO terms for each subontology
     - interpros.pkl - list of InterPRO ids used as features
+    - ppi.bin, ppi_nextprot.bin - PPI graphs saved with DGL library
 * train.py and train_gat.py scripts are used to train different versions of
   DeepGOSE and DeepGOGATSE models correspondingly
 * train_cnn.py, train_mlp.py and train_dgg.py scripts are used to train
