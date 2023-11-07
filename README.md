@@ -40,6 +40,7 @@ To train the models and reproduce our results:
 * Download the [training-data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/training-data.tar.gz)
   - The training data includes both UniProtKB/SwissProt dataset and the neXtProt
     evaluation dataset.
+  - go.obo, go.norm, go-plus.norm - Gene Ontology and normalized axiom files
   - mf, bp and cc subfolders include:
     - train_data.pkl - training proteins
     - valid_data.pkl - validation proteins
