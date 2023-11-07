@@ -9,6 +9,10 @@ import pandas as pd
 import gzip
 import logging
 from deepgo.utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
+from Bio import SeqIO
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+from deepgo.extract_esm import extract_esm
 
 
 @ck.command()
@@ -18,7 +22,10 @@ from deepgo.utils import Ontology, is_exp_code, is_cafa_target, FUNC_DICT
 @ck.option(
     '--out-file', '-o', default='data/swissprot_exp_2022_04.pkl',
     help='Result file with a list of proteins, sequences and annotations')
-def main(swissprot_file, out_file):
+@ck.option(
+    '--device', '-d', default='cpu',
+    help='Device for ESM2 model')
+def main(swissprot_file, out_file, device):
     go = Ontology('data/go.obo', with_rels=True)
     proteins, accessions, sequences, annotations, string_ids, orgs, genes, interpros = load_data(swissprot_file)
     df = pd.DataFrame({
@@ -56,7 +63,7 @@ def main(swissprot_file, out_file):
         annot_set = set()
         annots = row['exp_annotations']
         for go_id in annots:
-            annot_set |= go.get_anchestors(go_id)
+            annot_set |= go.get_ancestors(go_id)
         annots = list(annot_set)
         prop_annotations.append(annots)
     df['prop_annotations'] = prop_annotations
@@ -68,6 +75,22 @@ def main(swissprot_file, out_file):
         else:
             cafa_target.append(False)
     df['cafa_target'] = cafa_target
+
+    # Extract ESM2 embeddings
+    # Save sequences to a FASTA file
+    print('Extracting ESM2 embeddings')
+    fasta_file = os.path.splitext(swissprot_file)[0] + '.fa'
+    with open(fasta_file, 'w') as f:
+        for row in df.itertuples():
+            record = SeqRecord(
+                Seq(row.sequences),
+                id=row.proteins,
+                description=''
+            )
+            SeqIO.write(record, f, 'fasta')
+    prots, esm2_data = extract_esm(fasta_file, device=device)
+    esm2_data = list(esm2_data)
+    df['esm2'] = esm2_data
     
     df.to_pickle(out_file)
     logging.info('Successfully saved %d proteins' % (len(df),) )
