@@ -68,7 +68,7 @@ To train the models and reproduce our results:
 The training scripts generate predictions for the test data that are used
 to compute evaluation metrics.
 * To evaluate single predictions run evaluate.py script. Example: \
-  `python evaluate.py -m mlp -td test -on mf`
+  `python evaluate.py -m mlp -td test -ont mf`
 * To evaluate approximate entailment predictions use evaluate_entailment.py
   script. Example: \
   `python evaluate_entailment.py -m deepgozero_esm -td nextprot -ont cc` \
