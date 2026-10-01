@@ -22,7 +22,7 @@ performance.
 # Running DeepGO-SE model (with GOPlus axioms)
 Follow these instructions to obtain predictions for your proteins. You'll need
 around 30Gb storage and a GPU with >16Gb memory (or you can use CPU)
-* Download the [data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/data.tar.gz)
+* Download the [data.tar.gz](https://bio2vec.net/data/deepgo/deepgo2/data.tar.gz)
 * Extract `tar xvzf data.tar.gz`
 * Run the model `python predict.py -if data/example.fa`
 
@@ -37,7 +37,7 @@ need to mount the data directory. Example: \
 
 # Training the models
 To train the models and reproduce our results:
-* Download the [training-data.tar.gz](https://deepgo.cbrc.kaust.edu.sa/data/deepgo2/training-data.tar.gz)
+* Download the [training-data.tar.gz](https://bio2vec.net/data/deepgo/deepgo2/training-data.tar.gz)
   - The training data includes both UniProtKB/SwissProt dataset and the neXtProt
     evaluation dataset.
   - go.obo, go.norm, go-plus.norm - Gene Ontology and normalized axiom files
