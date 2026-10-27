@@ -191,7 +191,6 @@ def main(data_root, ont, model_name, model_id, test_data_name, batch_size, epoch
 
             scheduler.step()
             
-        log_file.close()
 
     # Loading best model
     print('Loading the best model')

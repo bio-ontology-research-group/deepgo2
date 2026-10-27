@@ -18,7 +18,7 @@ def get_data(df, features_dict, terms_dict, features_length, features_column):
         elif features_column == 'interpros':
             for feat in row.interpros:
                 if feat in features_dict:
-                    data[i, features_dict[feat]]
+                    data[i, features_dict[feat]] = 1
         elif features_column == 'mf_preds':
             data[i, :] = th.FloatTensor(row.mf_preds)
         elif features_column == 'prop_annotations':
